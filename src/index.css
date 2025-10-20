@@ -22,31 +22,12 @@ body {
   overflow: hidden;
 }
 
-/* Custom Scrollbar Styling */
+/* Hide default scrollbar - using custom TimelineScrubber instead */
 .timeline-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #4b5563 #1f2937;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
 }
 
 .timeline-scrollbar::-webkit-scrollbar {
-  width: 16px;
-}
-
-.timeline-scrollbar::-webkit-scrollbar-track {
-  background: #1f2937;
-  border-left: 1px solid #374151;
-}
-
-.timeline-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #4b5563, #6b7280);
-  border-radius: 8px;
-  border: 3px solid #1f2937;
-}
-
-.timeline-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #6b7280, #9ca3af);
-}
-
-.timeline-scrollbar::-webkit-scrollbar-thumb:active {
-  background: #3b82f6;
+  display: none; /* Chrome, Safari, Opera */
 }
