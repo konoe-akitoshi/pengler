@@ -169,34 +169,6 @@ function Gallery() {
         currentMonth={currentMonth}
       />
 
-      {/* Fast Scroll Preview Overlay */}
-      {isScrolling && currentMonth && (
-        <div className="fixed inset-0 flex items-center justify-center z-30 pointer-events-none">
-          <div className="bg-gray-900 bg-opacity-95 backdrop-blur-md px-12 py-8 rounded-3xl shadow-2xl border-2 border-gray-600">
-            <div className="text-6xl font-bold text-white mb-2">
-              {dayjs(currentMonth).format('MMMM')}
-            </div>
-            <div className="text-3xl text-gray-300 text-center">
-              {currentYear}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Floating Timeline Indicator (when not scrolling) */}
-      {!isScrolling && currentMonth && (
-        <div className="fixed right-8 top-1/2 -translate-y-1/2 z-20 pointer-events-none">
-          <div className="bg-gray-900 bg-opacity-90 backdrop-blur-sm px-6 py-3 rounded-full shadow-2xl border border-gray-700">
-            <div className="text-2xl font-bold text-white">
-              {dayjs(currentMonth).format('MMM')}
-            </div>
-            <div className="text-sm text-gray-400 text-center">
-              {currentYear}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Hierarchical Year -> Month -> Day Grid */}
       {groupedByDate.map((yearGroup) => (
         <div key={yearGroup.year} id={`year-${yearGroup.year}`} className="mb-12">
