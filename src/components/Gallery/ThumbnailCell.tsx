@@ -34,7 +34,7 @@ function ThumbnailCell({ columnIndex, rowIndex, style, data }: ThumbnailCellProp
         <img
           src={thumbnailSrc}
           alt={media.filePath}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
           loading="lazy"
         />
         {media.mediaType === 'video' && (

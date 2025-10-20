@@ -1,7 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
-import { FixedSizeGrid as Grid } from 'react-window';
 import { useMediaStore } from '../../stores/mediaStore';
-import ThumbnailCell from './ThumbnailCell';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import TimelineScrubber from './TimelineScrubber';
 import dayjs from 'dayjs';
 
@@ -57,25 +56,6 @@ function Gallery() {
           }))
       }));
   }, [mediaFiles]);
-
-  // Calculate responsive grid dimensions
-  const [containerWidth, setContainerWidth] = useState(0);
-
-  useEffect(() => {
-    const updateWidth = () => {
-      if (scrollContainerRef.current) {
-        setContainerWidth(scrollContainerRef.current.clientWidth);
-      }
-    };
-
-    updateWidth();
-    window.addEventListener('resize', updateWidth);
-    return () => window.removeEventListener('resize', updateWidth);
-  }, []);
-
-  const ITEM_SIZE = 200;
-  const COLUMN_COUNT = Math.max(1, Math.floor(containerWidth / ITEM_SIZE));
-  const GRID_WIDTH = COLUMN_COUNT * ITEM_SIZE;
 
   // Handle scroll to update current year/month indicator and detect fast scrolling
   useEffect(() => {
@@ -167,14 +147,6 @@ function Gallery() {
     );
   }
 
-  // Prepare year data for scrubber
-  const yearRanges = useMemo(() => {
-    return groupedByDate.map(yearGroup => ({
-      year: yearGroup.year,
-      months: yearGroup.months.map(m => ({ month: m.month, offset: 0 }))
-    }));
-  }, [groupedByDate]);
-
   return (
     <div className="flex-1 overflow-auto relative timeline-scrollbar" ref={scrollContainerRef}>
       {/* Timeline Scrubber (Immich-inspired) */}
@@ -214,18 +186,30 @@ function Gallery() {
                     </h3>
                   </div>
 
-                  {/* Grid for this day */}
-                  <Grid
-                    columnCount={COLUMN_COUNT}
-                    columnWidth={ITEM_SIZE}
-                    height={Math.ceil(dayGroup.files.length / COLUMN_COUNT) * ITEM_SIZE}
-                    rowCount={Math.ceil(dayGroup.files.length / COLUMN_COUNT)}
-                    rowHeight={ITEM_SIZE}
-                    width={GRID_WIDTH}
-                    itemData={dayGroup.files}
-                  >
-                    {ThumbnailCell}
-                  </Grid>
+                  {/* Flexbox grid for this day */}
+                  <div className="flex flex-wrap gap-1 px-4">
+                    {dayGroup.files.map((file) => {
+                      const thumbnailSrc = file.thumbnailPath
+                        ? convertFileSrc(file.thumbnailPath)
+                        : convertFileSrc(file.filePath);
+
+                      return (
+                        <div
+                          key={file.id}
+                          className="flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+                          style={{ height: '200px', width: 'auto' }}
+                          onClick={() => useMediaStore.getState().setSelectedMedia(file)}
+                        >
+                          <img
+                            src={thumbnailSrc}
+                            alt={file.filePath}
+                            className="h-full w-auto object-cover rounded"
+                            loading="lazy"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               ))}
             </div>
