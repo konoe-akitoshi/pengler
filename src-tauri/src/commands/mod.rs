@@ -2,6 +2,7 @@ pub mod scanner;
 pub mod thumbnail;
 pub mod cache;
 pub mod cache_manager;
+pub mod optimizer;
 
 pub use scanner::scan_folder;
 pub use thumbnail::{generate_thumbnail, get_cache_stats, clear_cache};
@@ -14,4 +15,8 @@ pub use cache_manager::{
     register_cache_entry,
     get_database_cache_stats,
     cleanup_orphaned_cache,
+};
+pub use optimizer::{
+    optimize_media_file,
+    batch_optimize_folder,
 };

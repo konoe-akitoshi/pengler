@@ -21,6 +21,8 @@ use commands::{
     register_cache_entry,
     get_database_cache_stats,
     cleanup_orphaned_cache,
+    optimize_media_file,
+    batch_optimize_folder,
 };
 use config::{
     get_config,
@@ -54,6 +56,8 @@ fn main() {
             register_cache_entry,
             get_database_cache_stats,
             cleanup_orphaned_cache,
+            optimize_media_file,
+            batch_optimize_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
