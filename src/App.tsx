@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { useMediaStore } from './stores/mediaStore';
 import Gallery from './components/Gallery/Gallery';
 import Sidebar from './components/Sidebar/Sidebar';
@@ -19,7 +20,9 @@ function App() {
       </div>
 
       {/* Lightbox */}
-      {selectedMedia && <MediaViewer />}
+      <AnimatePresence mode="wait">
+        {selectedMedia && <MediaViewer key="media-viewer" />}
+      </AnimatePresence>
     </div>
   );
 }
