@@ -187,27 +187,21 @@ function Gallery() {
                   </div>
 
                   {/* Flexbox grid for this day */}
-                  <div className="flex flex-wrap gap-1 px-4">
+                  <div className="flex flex-wrap gap-1 px-4 items-start">
                     {dayGroup.files.map((file) => {
                       const thumbnailSrc = file.thumbnailPath
                         ? convertFileSrc(file.thumbnailPath)
                         : convertFileSrc(file.filePath);
 
                       return (
-                        <div
+                        <img
                           key={file.id}
-                          className="flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
-                          style={{ height: '200px' }}
+                          src={thumbnailSrc}
+                          alt={file.filePath}
+                          className="h-[200px] w-auto object-cover rounded cursor-pointer hover:opacity-90 transition-opacity flex-shrink-0"
+                          loading="lazy"
                           onClick={() => useMediaStore.getState().setSelectedMedia(file)}
-                        >
-                          <img
-                            src={thumbnailSrc}
-                            alt={file.filePath}
-                            className="h-full w-auto object-cover rounded"
-                            loading="lazy"
-                            style={{ minWidth: '100px' }}
-                          />
-                        </div>
+                        />
                       );
                     })}
                   </div>
