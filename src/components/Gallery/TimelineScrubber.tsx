@@ -37,7 +37,6 @@ function TimelineScrubber({
   currentYear,
   currentMonth,
 }: TimelineScrubberProps) {
-  const [isVisible, setIsVisible] = useState(false);
   const [isHover, setIsHover] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [hoverY, setHoverY] = useState(0);
@@ -45,18 +44,6 @@ function TimelineScrubber({
   const [hoverLabel, setHoverLabel] = useState('');
   const scrubberRef = useRef<HTMLDivElement>(null);
   const [scrubberHeight, setScrubberHeight] = useState(0);
-
-  // Track mouse position globally to show/hide scrubber
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const threshold = 100; // Show when mouse is within 100px of right edge
-      const distanceFromRight = window.innerWidth - e.clientX;
-      setIsVisible(distanceFromRight < threshold || isDragging);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    return () => document.removeEventListener('mousemove', handleMouseMove);
-  }, [isDragging]);
 
   // Calculate timeline segments
   const segments = useMemo((): TimelineSegment[] => {
@@ -247,21 +234,20 @@ function TimelineScrubber({
   // Dynamic width (expand to full width when dragging like Immich)
   const scrubberWidth = isDragging ? '100vw' : `${SCRUBBER_WIDTH}px`;
 
-  if (!isVisible) return null;
+  // Show elements only when hovering or dragging
+  const showElements = isHover || isDragging;
 
   return (
-    <motion.div
+    <div
       ref={scrubberRef}
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 20 }}
-      transition={{ duration: 0.2 }}
       className="fixed right-0 top-0 bottom-0 z-50 select-none hover:cursor-row-resize transition-all"
       style={{
         width: scrubberWidth,
         paddingTop: PADDING_TOP,
         paddingBottom: PADDING_BOTTOM,
-        backgroundColor: isDragging ? 'transparent' : 'transparent'
+        backgroundColor: 'transparent',
+        opacity: showElements ? 1 : 0,
+        transition: 'opacity 0.2s ease-in-out'
       }}
       onMouseEnter={() => setIsHover(true)}
       onMouseLeave={() => setIsHover(false)}
@@ -342,7 +328,7 @@ function TimelineScrubber({
           );
         })}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
