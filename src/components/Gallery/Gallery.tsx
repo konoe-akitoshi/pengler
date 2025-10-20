@@ -58,8 +58,24 @@ function Gallery() {
       }));
   }, [mediaFiles]);
 
-  const COLUMN_COUNT = 5;
+  // Calculate responsive grid dimensions
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (scrollContainerRef.current) {
+        setContainerWidth(scrollContainerRef.current.clientWidth);
+      }
+    };
+
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
+
   const ITEM_SIZE = 200;
+  const COLUMN_COUNT = Math.max(1, Math.floor(containerWidth / ITEM_SIZE));
+  const GRID_WIDTH = COLUMN_COUNT * ITEM_SIZE;
 
   // Handle scroll to update current year/month indicator and detect fast scrolling
   useEffect(() => {
@@ -205,7 +221,7 @@ function Gallery() {
                     height={Math.ceil(dayGroup.files.length / COLUMN_COUNT) * ITEM_SIZE}
                     rowCount={Math.ceil(dayGroup.files.length / COLUMN_COUNT)}
                     rowHeight={ITEM_SIZE}
-                    width={COLUMN_COUNT * ITEM_SIZE}
+                    width={GRID_WIDTH}
                     itemData={dayGroup.files}
                   >
                     {ThumbnailCell}
