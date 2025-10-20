@@ -142,7 +142,7 @@ function DesktopSidebar({ showLabels, isMini, currentPage, setCurrentPage, photo
       <SidebarNav currentPage={currentPage} setCurrentPage={setCurrentPage} showLabels={showLabels} />
 
       <div className="px-4 py-3 border-t border-gray-700 overflow-hidden">
-        {showLabels && <div className="text-xs text-gray-400 whitespace-nowrap">{photoCount} photos</div>}
+        {showLabels && <div className="text-xs text-gray-400 whitespace-nowrap">{photoCount} items</div>}
       </div>
     </div>
   );
@@ -211,7 +211,7 @@ interface SidebarFooterProps {
 function SidebarFooter({ photoCount }: SidebarFooterProps) {
   return (
     <div className="px-4 py-3 border-t border-gray-700">
-      <div className="text-xs text-gray-400">{photoCount} photos</div>
+      <div className="text-xs text-gray-400">{photoCount} items</div>
     </div>
   );
 }

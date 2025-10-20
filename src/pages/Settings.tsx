@@ -1,18 +1,37 @@
+import { useState, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { useMediaStore } from '../stores/mediaStore';
 import { MediaFile } from '../types/media';
+import { Config } from '../types/config';
 
 function Settings() {
   const {
-    selectedFolder,
-    setSelectedFolder,
     setMediaFiles,
     setIsScanning,
     setScanProgress,
     clearMediaFiles,
     mediaFiles,
   } = useMediaStore();
+
+  const [config, setConfig] = useState<Config | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadConfig();
+  }, []);
+
+  const loadConfig = async () => {
+    try {
+      const cfg = await invoke<Config>('get_config');
+      setConfig(cfg);
+      if (cfg.library_folders.length > 0) {
+        setSelectedFolder(cfg.library_folders[0]);
+      }
+    } catch (error) {
+      console.error('Failed to load config:', error);
+    }
+  };
 
   const handleSelectFolder = async () => {
     try {
@@ -40,9 +59,30 @@ function Settings() {
           return dateB - dateA;
         });
 
+        // Generate thumbnails in the background
+        Promise.all(
+          sortedFiles.map(async (file, index) => {
+            try {
+              const thumbnailPath = await invoke<string>('generate_thumbnail', {
+                filePath: file.filePath,
+                fileHash: file.fileHash,
+              });
+              file.thumbnailPath = thumbnailPath;
+
+              // Update progress
+              setScanProgress(Math.round((index + 1) / sortedFiles.length * 100));
+            } catch (error) {
+              console.error(`Failed to generate thumbnail for ${file.filePath}:`, error);
+            }
+          })
+        ).then(() => {
+          setMediaFiles([...sortedFiles]);
+          setIsScanning(false);
+          setScanProgress(100);
+        });
+
+        // Set files immediately without waiting for thumbnails
         setMediaFiles(sortedFiles);
-        setIsScanning(false);
-        setScanProgress(100);
       }
     } catch (error) {
       console.error('Failed to select folder:', error);
@@ -64,7 +104,7 @@ function Settings() {
               <div className="bg-gray-800 rounded p-4 border border-gray-700">
                 <div className="text-xs text-gray-400 mb-1">Current folder</div>
                 <div className="text-sm text-gray-200 font-mono break-all">{selectedFolder}</div>
-                <div className="text-xs text-gray-400 mt-2">{mediaFiles.length} photos</div>
+                <div className="text-xs text-gray-400 mt-2">{mediaFiles.length} items</div>
               </div>
             </div>
           ) : (

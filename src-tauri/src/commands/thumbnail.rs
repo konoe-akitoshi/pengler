@@ -1,9 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::fs;
+use std::process::Command;
 use image::{imageops::FilterType, ImageFormat};
 use anyhow::Result;
 
 use crate::utils::short_hash;
+use crate::models::{MediaType, is_media_file};
 
 const THUMBNAIL_SIZE: u32 = 300;
 
@@ -33,14 +35,68 @@ fn generate_thumbnail_internal(file_path: &str, file_hash: &str) -> Result<Strin
         return Ok(thumbnail_path.to_string_lossy().to_string());
     }
 
+    // Determine media type
+    let media_type = is_media_file(file_path)
+        .ok_or_else(|| anyhow::anyhow!("Not a supported media file"))?;
+
+    match media_type {
+        MediaType::Image => generate_image_thumbnail(source_path, &thumbnail_path)?,
+        MediaType::Video => generate_video_thumbnail(source_path, &thumbnail_path)?,
+    }
+
+    Ok(thumbnail_path.to_string_lossy().to_string())
+}
+
+fn generate_image_thumbnail(source_path: &Path, thumbnail_path: &Path) -> Result<()> {
     // Open and resize image
     let img = image::open(source_path)?;
     let thumbnail = img.resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, FilterType::Lanczos3);
 
     // Save as WebP
-    thumbnail.save_with_format(&thumbnail_path, ImageFormat::WebP)?;
+    thumbnail.save_with_format(thumbnail_path, ImageFormat::WebP)?;
 
-    Ok(thumbnail_path.to_string_lossy().to_string())
+    Ok(())
+}
+
+fn generate_video_thumbnail(source_path: &Path, thumbnail_path: &Path) -> Result<()> {
+    // Create a temporary PNG file first
+    let temp_png = thumbnail_path.with_extension("png");
+
+    // Try to use ffmpeg to extract frame at 1 second
+    let output = Command::new("ffmpeg")
+        .arg("-ss").arg("1") // Seek to 1 second
+        .arg("-i").arg(source_path)
+        .arg("-vframes").arg("1") // Extract one frame
+        .arg("-vf").arg(format!("scale={}:{}:force_original_aspect_ratio=decrease", THUMBNAIL_SIZE, THUMBNAIL_SIZE))
+        .arg("-y") // Overwrite output file
+        .arg(&temp_png)
+        .output();
+
+    match output {
+        Ok(result) if result.status.success() => {
+            // Convert PNG to WebP using image crate
+            let img = image::open(&temp_png)?;
+            let thumbnail = img.resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, FilterType::Lanczos3);
+            thumbnail.save_with_format(thumbnail_path, ImageFormat::WebP)?;
+
+            // Clean up temporary PNG
+            let _ = fs::remove_file(&temp_png);
+
+            Ok(())
+        },
+        Ok(result) => {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            Err(anyhow::anyhow!("ffmpeg failed: {}", stderr))
+        },
+        Err(e) => {
+            // If ffmpeg is not installed, return a more helpful error
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Err(anyhow::anyhow!("ffmpeg not found. Please install ffmpeg to generate video thumbnails."))
+            } else {
+                Err(anyhow::anyhow!("Failed to run ffmpeg: {}", e))
+            }
+        }
+    }
 }
 
 pub fn get_cache_directory() -> Result<PathBuf> {
