@@ -29,7 +29,7 @@ const PADDING_TOP = 32;
 const PADDING_BOTTOM = 10;
 const MIN_YEAR_LABEL_DISTANCE = 16;
 const MIN_DOT_DISTANCE = 8;
-const SCRUBBER_WIDTH = 60;
+const SCRUBBER_WIDTH = 70;
 
 function TimelineScrubber({
   groupedByDate,
@@ -240,14 +240,13 @@ function TimelineScrubber({
   return (
     <div
       ref={scrubberRef}
-      className="fixed right-0 top-0 bottom-0 z-50 select-none hover:cursor-row-resize transition-all"
+      className="fixed right-0 top-0 bottom-0 z-50 select-none transition-opacity duration-200"
       style={{
         width: scrubberWidth,
         paddingTop: PADDING_TOP,
         paddingBottom: PADDING_BOTTOM,
-        backgroundColor: 'transparent',
         opacity: showElements ? 1 : 0,
-        transition: 'opacity 0.2s ease-in-out'
+        cursor: isHover || isDragging ? 'ns-resize' : 'default'
       }}
       onMouseEnter={() => setIsHover(true)}
       onMouseLeave={() => setIsHover(false)}
@@ -266,68 +265,70 @@ function TimelineScrubber({
       <AnimatePresence>
         {(isHover || isDragging) && hoverLabel && (
           <>
-            {/* Hover thumb (bar that follows cursor) */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute right-0 w-10 h-0.5 bg-blue-500 pointer-events-none"
-              style={{ top: hoverY + PADDING_TOP }}
-            />
             {/* Hover label */}
             <motion.div
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 10 }}
-              className="absolute right-14 bg-gray-900 bg-opacity-90 backdrop-blur-sm px-3 py-1 rounded-l-md border-b-2 border-blue-500 shadow-lg text-sm font-medium text-white whitespace-nowrap pointer-events-none z-10"
+              initial={{ opacity: 0, x: 10, y: '-50%' }}
+              animate={{ opacity: 1, x: 0, y: '-50%' }}
+              exit={{ opacity: 0, x: 10, y: '-50%' }}
+              className="absolute right-12 bg-gray-900 bg-opacity-95 backdrop-blur-sm px-3 py-1.5 rounded-md text-sm font-medium text-white whitespace-nowrap pointer-events-none z-10 shadow-lg"
               style={{ top: hoverY + PADDING_TOP }}
             >
               {hoverLabel}
             </motion.div>
+            {/* Hover thumb (bar that follows cursor) - aligned with label center */}
+            <motion.div
+              initial={{ opacity: 0, y: '-50%' }}
+              animate={{ opacity: 1, y: '-50%' }}
+              exit={{ opacity: 0, y: '-50%' }}
+              className="absolute right-0 w-12 h-1 bg-blue-500 pointer-events-none rounded-full shadow-lg"
+              style={{ top: hoverY + PADDING_TOP }}
+            />
           </>
         )}
       </AnimatePresence>
 
       {/* Scroll position indicator */}
-      {!isDragging && (
+      {!isDragging && showElements && (
         <div
-          className="absolute right-0 h-0.5 w-10 bg-blue-500 transition-all duration-200"
+          className="absolute right-0 h-0.5 w-10 bg-blue-500 bg-opacity-50 transition-all duration-200 rounded-full pointer-events-none"
           style={{ top: scrollY + PADDING_TOP }}
         />
       )}
 
       {/* Timeline segments */}
-      <div className="relative h-full">
-        {segments.map((segment, index) => {
-          let accumulatedHeight = 0;
-          for (let i = 0; i < index; i++) {
-            accumulatedHeight += segments[i].height;
-          }
+      {showElements && (
+        <div className="relative h-full">
+          {segments.map((segment, index) => {
+            let accumulatedHeight = 0;
+            for (let i = 0; i < index; i++) {
+              accumulatedHeight += segments[i].height;
+            }
 
-          return (
-            <div
-              key={`${segment.year}-${segment.month}`}
-              className="absolute right-0"
-              style={{
-                top: accumulatedHeight,
-                height: segment.height,
-              }}
-            >
-              {/* Year label */}
-              {segment.hasLabel && (
-                <div className="absolute right-5 -top-4 text-xs text-gray-400 font-mono">
-                  {segment.year}
-                </div>
-              )}
+            return (
+              <div
+                key={`${segment.year}-${segment.month}`}
+                className="absolute right-0"
+                style={{
+                  top: accumulatedHeight,
+                  height: segment.height,
+                }}
+              >
+                {/* Year label */}
+                {segment.hasLabel && (
+                  <div className="absolute right-4 -top-4 bg-gray-900 bg-opacity-90 px-1.5 py-0.5 rounded text-xs text-white font-semibold shadow-lg">
+                    {segment.year}
+                  </div>
+                )}
 
-              {/* Dot marker */}
-              {segment.hasDot && (
-                <div className="absolute right-3 bottom-0 w-1 h-1 rounded-full bg-gray-500" />
-              )}
-            </div>
-          );
-        })}
-      </div>
+                {/* Dot marker */}
+                {segment.hasDot && (
+                  <div className="absolute right-3 bottom-0 w-1 h-1 rounded-full bg-gray-400" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
