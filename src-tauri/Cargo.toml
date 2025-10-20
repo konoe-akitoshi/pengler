@@ -1,0 +1,50 @@
+[package]
+name = "pengler"
+version = "0.1.0"
+description = "Ultra-lightweight cross-platform photo and video library"
+authors = ["you"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.1", features = ["protocol-asset", "devtools"] }
+tauri-plugin-dialog = "2.0"
+tauri-plugin-fs = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# File system scanning
+walkdir = "2.5"
+
+# Image processing
+image = "0.25"
+
+# EXIF metadata
+kamadak-exif = "0.5"
+
+# Parallel processing
+rayon = "1.10"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Hashing
+blake3 = "1.5"
+
+# Error handling
+anyhow = "1.0"
+
+# Directories
+dirs = "5.0"
+
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-shell = "2.0"
+
+[features]
+# This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]
