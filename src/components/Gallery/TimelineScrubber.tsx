@@ -39,13 +39,11 @@ function TimelineScrubber({
 }: TimelineScrubberProps) {
   const [isHover, setIsHover] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [isScrolling, setIsScrolling] = useState(false);
   const [hoverY, setHoverY] = useState(0);
   const [scrollY, setScrollY] = useState(0);
   const [hoverLabel, setHoverLabel] = useState('');
   const scrubberRef = useRef<HTMLDivElement>(null);
   const [scrubberHeight, setScrubberHeight] = useState(0);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Calculate timeline segments
   const segments = useMemo((): TimelineSegment[] => {
@@ -152,25 +150,11 @@ function TimelineScrubber({
       const scrollPercentage = maxScroll > 0 ? scrollTop / maxScroll : 0;
       const availableHeight = scrubberHeight - (PADDING_TOP + PADDING_BOTTOM);
       setScrollY(scrollPercentage * availableHeight);
-
-      // Show scrollbar during scroll
-      setIsScrolling(true);
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-      scrollTimeoutRef.current = setTimeout(() => {
-        setIsScrolling(false);
-      }, 1000);
     };
 
     handleScroll();
     container.addEventListener('scroll', handleScroll);
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-    };
+    return () => container.removeEventListener('scroll', handleScroll);
   }, [scrollContainerRef, scrubberHeight]);
 
   // Get segment at Y position
@@ -247,12 +231,6 @@ function TimelineScrubber({
     };
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
-  // Get current scroll label
-  const scrollLabel = useMemo(() => {
-    const segmentInfo = getSegmentAtY(scrollY + PADDING_TOP);
-    return segmentInfo?.segment.dateFormatted || '';
-  }, [scrollY, getSegmentAtY]);
-
   // Dynamic width (expand to full width when dragging like Immich)
   const scrubberWidth = isDragging ? '100vw' : `${SCRUBBER_WIDTH}px`;
 
@@ -310,19 +288,7 @@ function TimelineScrubber({
         <div
           className="absolute right-0 h-0.5 w-10 bg-blue-500 transition-all duration-200"
           style={{ top: scrollY + PADDING_TOP }}
-        >
-          {isScrolling && scrollLabel && !isHover && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="absolute right-0 bottom-0 bg-gray-900 bg-opacity-90 backdrop-blur-sm px-2 py-1 rounded-tl-md border-b-2 border-blue-500 text-xs font-medium text-white whitespace-nowrap pointer-events-none shadow-lg"
-            >
-              {scrollLabel}
-            </motion.div>
-          )}
-        </div>
+        />
       )}
 
       {/* Timeline segments */}
