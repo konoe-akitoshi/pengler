@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
+import { useAppStore } from './stores/appStore';
 import { useMediaStore } from './stores/mediaStore';
 import Gallery from './components/Gallery/Gallery';
 import Sidebar from './components/Sidebar/Sidebar';
 import MediaViewer from './components/Lightbox/MediaViewer';
+import Settings from './pages/Settings';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const currentPage = useAppStore((state) => state.currentPage);
   const selectedMedia = useMediaStore((state) => state.selectedMedia);
 
   return (
@@ -16,7 +19,8 @@ function App() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Gallery />
+        {currentPage === 'home' && <Gallery />}
+        {currentPage === 'settings' && <Settings />}
       </div>
 
       {/* Lightbox */}
