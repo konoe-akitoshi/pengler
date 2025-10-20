@@ -51,22 +51,44 @@ function TimelineScrubber({
   const segments = useMemo((): TimelineSegment[] => {
     const result: TimelineSegment[] = [];
     const container = scrollContainerRef.current;
-    if (!container) return result;
+    if (!container || scrubberHeight === 0) return result;
 
-    const totalScrollHeight = container.scrollHeight - container.clientHeight;
     const availableHeight = scrubberHeight - (PADDING_TOP + PADDING_BOTTOM);
 
+    // Calculate actual DOM heights for each month section
+    const monthHeights: number[] = [];
+    let totalContentHeight = 0;
+
+    groupedByDate.forEach((yearGroup) => {
+      yearGroup.months.forEach((monthGroup) => {
+        const monthElement = document.getElementById(`month-${monthGroup.month}`);
+        if (monthElement) {
+          const height = monthElement.offsetHeight;
+          monthHeights.push(height);
+          totalContentHeight += height;
+        } else {
+          // Fallback: estimate based on file count
+          const totalFiles = monthGroup.days.reduce((sum, day) => sum + day.files.length, 0);
+          const estimatedHeight = Math.ceil(totalFiles / 5) * 200 + 100;
+          monthHeights.push(estimatedHeight);
+          totalContentHeight += estimatedHeight;
+        }
+      });
+    });
+
+    // Now create segments proportional to actual content height
     let heightAccumulator = 0;
     let dotHeightAccumulator = 0;
     let previousLabeledYear: number | null = null;
+    let monthIndex = 0;
 
     groupedByDate.forEach((yearGroup) => {
-      yearGroup.months.forEach((monthGroup, monthIndex) => {
+      yearGroup.months.forEach((monthGroup, monthIndexInYear) => {
         const totalFiles = monthGroup.days.reduce((sum, day) => sum + day.files.length, 0);
+        const contentHeight = monthHeights[monthIndex];
 
-        // Estimate height based on file count (rough approximation)
-        const estimatedContentHeight = Math.ceil(totalFiles / 5) * 200 + 100;
-        const heightPercentage = estimatedContentHeight / (container.scrollHeight || 1);
+        // Calculate segment height proportional to actual content
+        const heightPercentage = contentHeight / totalContentHeight;
         const segmentHeight = heightPercentage * availableHeight;
 
         const segment: TimelineSegment = {
@@ -80,7 +102,7 @@ function TimelineScrubber({
         };
 
         // Determine if this segment should have a year label
-        if (monthIndex === 0 && heightAccumulator > MIN_YEAR_LABEL_DISTANCE) {
+        if (monthIndexInYear === 0 && heightAccumulator > MIN_YEAR_LABEL_DISTANCE) {
           segment.hasLabel = true;
           previousLabeledYear = segment.year;
           heightAccumulator = 0;
@@ -99,6 +121,7 @@ function TimelineScrubber({
         heightAccumulator += segment.height;
         dotHeightAccumulator += segment.height;
         result.push(segment);
+        monthIndex++;
       });
     });
 
