@@ -4,6 +4,7 @@
 mod models;
 mod commands;
 mod utils;
+mod config;
 
 use commands::{
     scan_folder,
@@ -12,6 +13,13 @@ use commands::{
     clear_cache,
     save_media_files,
     load_media_files,
+};
+use config::{
+    get_config,
+    update_config,
+    add_library_folder,
+    remove_library_folder,
+    set_cache_folder,
 };
 
 fn main() {
@@ -26,6 +34,11 @@ fn main() {
             clear_cache,
             save_media_files,
             load_media_files,
+            get_config,
+            update_config,
+            add_library_folder,
+            remove_library_folder,
+            set_cache_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
