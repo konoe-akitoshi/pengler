@@ -197,7 +197,7 @@ function Gallery() {
                         <div
                           key={file.id}
                           className="flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
-                          style={{ height: '200px', width: 'auto' }}
+                          style={{ height: '200px' }}
                           onClick={() => useMediaStore.getState().setSelectedMedia(file)}
                         >
                           <img
@@ -205,6 +205,7 @@ function Gallery() {
                             alt={file.filePath}
                             className="h-full w-auto object-cover rounded"
                             loading="lazy"
+                            style={{ minWidth: '100px' }}
                           />
                         </div>
                       );
