@@ -6,7 +6,7 @@ import Sidebar from './components/Sidebar/Sidebar';
 import MediaViewer from './components/Lightbox/MediaViewer';
 
 function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const selectedMedia = useMediaStore((state) => state.selectedMedia);
 
   return (
