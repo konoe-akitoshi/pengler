@@ -34,8 +34,8 @@ const SCRUBBER_WIDTH = 70;
 function TimelineScrubber({
   groupedByDate,
   scrollContainerRef,
-  currentYear,
-  currentMonth,
+  currentYear: _currentYear,
+  currentMonth: _currentMonth,
 }: TimelineScrubberProps) {
   const [isHover, setIsHover] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -206,10 +206,6 @@ function TimelineScrubber({
     },
     [isDragging, getSegmentAtY, scrollContainerRef]
   );
-
-  const handleMouseDown = useCallback(() => {
-    setIsDragging(true);
-  }, []);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);

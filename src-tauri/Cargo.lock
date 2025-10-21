@@ -2906,6 +2906,7 @@ dependencies = [
  "dirs 5.0.1",
  "image",
  "kamadak-exif",
+ "lazy_static",
  "rayon",
  "rusqlite",
  "serde",

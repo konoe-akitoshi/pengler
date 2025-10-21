@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::fs;
-use image::{imageops::FilterType, ImageFormat, DynamicImage};
+use image::{imageops::FilterType, DynamicImage};
 use anyhow::Result;
 
 use crate::config::Config;
-use crate::db::{Database, generate_folder_hash};
+use crate::db::Database;
 use crate::utils::short_hash;
 
 /// Optimize an image file
@@ -40,7 +40,7 @@ pub fn optimize_image(
     Ok((output_path, file_size))
 }
 
-fn save_webp(img: &DynamicImage, path: &Path, quality: u8) -> Result<()> {
+fn save_webp(img: &DynamicImage, path: &Path, _quality: u8) -> Result<()> {
     // For now, use the image crate's WebP support
     // In the future, we could use libwebp directly for better control
     let encoder = image::codecs::webp::WebPEncoder::new_lossless(
@@ -66,9 +66,11 @@ pub fn optimize_video(
     let short_name = short_hash(file_hash);
     let output_path = output_dir.join(format!("{}.mp4", short_name));
 
-    // Calculate target resolution (maintain aspect ratio)
-    let scale_filter = format!("scale='min({},iw)':'min({},ih)':force_original_aspect_ratio=decrease",
-        max_resolution, max_resolution);
+    // Calculate target resolution (maintain aspect ratio) and ensure dimensions are divisible by 2
+    let scale_filter = format!(
+        "scale='min({},iw)':'min({},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        max_resolution, max_resolution
+    );
 
     // Run ffmpeg to optimize the video
     let output = Command::new("ffmpeg")
@@ -113,9 +115,20 @@ pub async fn optimize_media_file(
     file_hash: String,
     media_type: String,
 ) -> Result<String, String> {
-    optimize_media_file_internal(&folder_path, &file_path, &file_hash, &media_type)
-        .await
-        .map_err(|e| e.to_string())
+    use crate::task_manager::TASK_MANAGER;
+
+    match optimize_media_file_internal(&folder_path, &file_path, &file_hash, &media_type).await {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            // Update task with failure (unless it was already counted during stop)
+            if let Some(task) = TASK_MANAGER.get_task(&folder_path) {
+                if !task.is_stopped() {
+                    task.increment_failed();
+                }
+            }
+            Err(e.to_string())
+        }
+    }
 }
 
 async fn optimize_media_file_internal(
@@ -124,8 +137,37 @@ async fn optimize_media_file_internal(
     file_hash: &str,
     media_type: &str,
 ) -> Result<String> {
+    use crate::task_manager::TASK_MANAGER;
+
+    println!("Optimizing file: {}", file_path);
+    println!("Library folder: {}", folder_path);
+
     // Load configuration
     let config = Config::load()?;
+
+    // Check if the library folder still exists in config
+    // This prevents orphaned cache creation if folder was removed during optimization
+    if !config.library_folders.contains(&folder_path.to_string()) {
+        println!("Folder no longer in library, skipping optimization: {}", folder_path);
+        return Err(anyhow::anyhow!("Library folder has been removed: {}", folder_path));
+    }
+
+    // Check if there's a task for this folder and if it's paused or stopped
+    if let Some(task) = TASK_MANAGER.get_task(folder_path) {
+        // Wait while paused
+        while task.is_paused() && !task.is_stopped() {
+            println!("Task paused, waiting...");
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+
+        // Stop if requested
+        if task.is_stopped() {
+            task.increment_processed();
+            task.increment_failed();
+            println!("Task stopped, skipping optimization: {}", file_path);
+            return Err(anyhow::anyhow!("Optimization task was stopped"));
+        }
+    }
 
     // Get cache directory
     let cache_dir = PathBuf::from(&config.cache_folder);
@@ -136,8 +178,26 @@ async fn optimize_media_file_internal(
     let db = Database::new()?;
     if let Some(cached_path) = db.get_cached_path(file_hash)? {
         if Path::new(&cached_path).exists() {
+            println!("File already optimized: {}", cached_path);
+            // Update task counters for already cached files
+            if let Some(task) = TASK_MANAGER.get_task(folder_path) {
+                task.increment_processed();
+                task.increment_optimized();
+
+                // Check if task is complete
+                let info = task.get_info();
+                if info.processed_files >= info.total_files {
+                    task.complete();
+                    println!("Task completed for folder: {}", folder_path);
+                }
+            }
             return Ok(cached_path);
         }
+    }
+
+    // Increment processed counter now that we're actually processing
+    if let Some(task) = TASK_MANAGER.get_task(folder_path) {
+        task.increment_processed();
     }
 
     // Optimize based on media type
@@ -159,17 +219,25 @@ async fn optimize_media_file_internal(
         _ => return Err(anyhow::anyhow!("Unsupported media type: {}", media_type)),
     };
 
+    println!("Optimized to: {}", output_path.display());
+
     // Register in database
+    // Only use existing folder_id - do not create new ones during optimization
     let folder_id = match db.get_folder_id(folder_path)? {
-        Some(id) => id,
+        Some(id) => {
+            println!("Found existing folder_id: {}", id);
+            id
+        }
         None => {
-            let folder_hash = generate_folder_hash(folder_path);
-            db.add_library_folder(folder_path, &folder_hash)?
+            println!("Folder not found in DB, cannot register cache without library folder");
+            return Err(anyhow::anyhow!("Library folder not registered in database: {}", folder_path));
         }
     };
 
     let file_metadata = fs::metadata(source_path)?;
     let original_size = file_metadata.len() as i64;
+
+    println!("Adding cache entry: folder_id={}, file={}, hash={}", folder_id, file_path, file_hash);
 
     db.add_cache_entry(
         folder_id,
@@ -180,6 +248,20 @@ async fn optimize_media_file_internal(
         original_size,
         cached_size,
     )?;
+
+    println!("Cache entry added successfully");
+
+    // Update task with success
+    if let Some(task) = TASK_MANAGER.get_task(folder_path) {
+        task.increment_optimized();
+
+        // Check if task is complete
+        let info = task.get_info();
+        if info.processed_files >= info.total_files {
+            task.complete();
+            println!("Task completed for folder: {}", folder_path);
+        }
+    }
 
     Ok(output_path.to_string_lossy().to_string())
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { useMediaStore } from '../../stores/mediaStore';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import TimelineScrubber from './TimelineScrubber';
 import dayjs from 'dayjs';
 
@@ -8,9 +8,9 @@ function Gallery() {
   const { mediaFiles, isScanning, scanProgress } = useMediaStore();
   const [currentMonth, setCurrentMonth] = useState<string>('');
   const [currentYear, setCurrentYear] = useState<string>('');
-  const [isScrolling, setIsScrolling] = useState(false);
+  const [_isScrolling, setIsScrolling] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Group by year -> month -> day hierarchy
   const groupedByDate = useMemo(() => {
@@ -56,6 +56,9 @@ function Gallery() {
           }))
       }));
   }, [mediaFiles]);
+
+  // Note: Background optimization is now handled by Settings.tsx when loading library folders
+  // This component just displays the media files
 
   // Handle scroll to update current year/month indicator and detect fast scrolling
   useEffect(() => {
@@ -189,9 +192,28 @@ function Gallery() {
                   {/* Flexbox grid for this day */}
                   <div className="flex flex-wrap gap-1 px-4 items-start">
                     {dayGroup.files.map((file) => {
+                      // For videos, don't use thumbnail if it fails - just show file path
+                      // For images, use the image file directly as fallback
+                      const isVideo = file.mediaType === 'video';
                       const thumbnailSrc = file.thumbnailPath
                         ? convertFileSrc(file.thumbnailPath)
-                        : convertFileSrc(file.filePath);
+                        : (isVideo ? '' : convertFileSrc(file.filePath));
+
+                      if (isVideo && !file.thumbnailPath) {
+                        // Video without thumbnail - show placeholder
+                        return (
+                          <div
+                            key={file.id}
+                            className="h-[200px] w-[200px] bg-gray-800 rounded cursor-pointer hover:opacity-90 transition-opacity flex-shrink-0 flex items-center justify-center"
+                            onClick={() => useMediaStore.getState().setSelectedMedia(file)}
+                          >
+                            <div className="text-center text-gray-400">
+                              <div className="text-4xl mb-2">🎬</div>
+                              <div className="text-xs px-2">Video</div>
+                            </div>
+                          </div>
+                        );
+                      }
 
                       return (
                         <img
@@ -201,6 +223,16 @@ function Gallery() {
                           className="h-[200px] w-auto object-cover rounded cursor-pointer hover:opacity-90 transition-opacity flex-shrink-0"
                           loading="lazy"
                           onClick={() => useMediaStore.getState().setSelectedMedia(file)}
+                          onError={(e) => {
+                            // For images, fallback to original file
+                            // For videos with failed thumbnails, hide the image
+                            if (!isVideo && file.thumbnailPath && e.currentTarget.src !== convertFileSrc(file.filePath)) {
+                              e.currentTarget.src = convertFileSrc(file.filePath);
+                            } else if (isVideo) {
+                              // Hide broken video thumbnail
+                              e.currentTarget.style.display = 'none';
+                            }
+                          }}
                         />
                       );
                     })}

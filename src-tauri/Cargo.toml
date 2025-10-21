@@ -45,6 +45,9 @@ dirs = "5.0"
 # Configuration
 toml = "0.8"
 
+# Lazy static
+lazy_static = "1.5"
+
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-shell = "2.0"
 

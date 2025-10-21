@@ -6,6 +6,7 @@ import Gallery from './components/Gallery/Gallery';
 import Sidebar from './components/Sidebar/Sidebar';
 import MediaViewer from './components/Lightbox/MediaViewer';
 import Settings from './pages/Settings';
+import Tasks from './pages/Tasks';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -21,6 +22,7 @@ function App() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {currentPage === 'home' && <Gallery />}
         {currentPage === 'settings' && <Settings />}
+        {currentPage === 'tasks' && <Tasks />}
       </div>
 
       {/* Lightbox */}

@@ -1,5 +1,5 @@
-use rusqlite::{Connection, Result as SqlResult};
-use std::path::{Path, PathBuf};
+use rusqlite::{Connection, Result as SqlResult, OptionalExtension};
+use std::path::PathBuf;
 use anyhow::Result;
 
 pub struct Database {
@@ -83,26 +83,89 @@ impl Database {
     }
 
     // Remove a library folder and all associated cache entries
-    pub fn remove_library_folder(&self, path: &str) -> Result<Vec<String>> {
-        // First, get all cached file paths for this folder
+    pub fn remove_library_folder(&self, path: &str) -> Result<(Vec<String>, Vec<String>)> {
+        println!("DB: Removing library folder: {}", path);
+
+        // First, get all cached file paths and original paths for this folder
         let mut stmt = self.conn.prepare(
-            "SELECT ce.cached_path
+            "SELECT ce.cached_path, ce.original_path, ce.file_hash
              FROM cache_entries ce
              JOIN library_folders lf ON ce.folder_id = lf.id
              WHERE lf.path = ?1"
         )?;
 
-        let cached_paths: Vec<String> = stmt
-            .query_map([path], |row| row.get(0))?
-            .collect::<SqlResult<Vec<String>>>()?;
+        let mut cached_paths: Vec<String> = Vec::new();
+        let mut thumbnail_hashes: Vec<String> = Vec::new();
+
+        let rows = stmt.query_map([path], |row| {
+            Ok((
+                row.get::<_, String>(0)?,  // cached_path
+                row.get::<_, String>(1)?,  // original_path
+                row.get::<_, String>(2)?,  // file_hash
+            ))
+        })?;
+
+        for row in rows {
+            let (cached_path, _original_path, file_hash) = row?;
+            println!("DB: Found cache entry - cached: {}, hash: {}", cached_path, file_hash);
+            cached_paths.push(cached_path);
+            thumbnail_hashes.push(file_hash);
+        }
+
+        println!("DB: Total entries found: {} cached, {} hashes", cached_paths.len(), thumbnail_hashes.len());
 
         // Delete the folder (cascade will delete cache entries)
-        self.conn.execute(
+        let deleted = self.conn.execute(
             "DELETE FROM library_folders WHERE path = ?1",
             [path],
         )?;
 
-        Ok(cached_paths)
+        println!("DB: Deleted {} folder record(s)", deleted);
+
+        Ok((cached_paths, thumbnail_hashes))
+    }
+
+    // Clear cache entries for a folder (without removing the folder itself)
+    pub fn clear_folder_cache(&self, path: &str) -> Result<(Vec<String>, Vec<String>)> {
+        println!("DB: Clearing cache for folder: {}", path);
+
+        // First, get all cached file paths and hashes for this folder
+        let mut stmt = self.conn.prepare(
+            "SELECT ce.cached_path, ce.file_hash
+             FROM cache_entries ce
+             JOIN library_folders lf ON ce.folder_id = lf.id
+             WHERE lf.path = ?1"
+        )?;
+
+        let mut cached_paths: Vec<String> = Vec::new();
+        let mut thumbnail_hashes: Vec<String> = Vec::new();
+
+        let rows = stmt.query_map([path], |row| {
+            Ok((
+                row.get::<_, String>(0)?,  // cached_path
+                row.get::<_, String>(1)?,  // file_hash
+            ))
+        })?;
+
+        for row in rows {
+            let (cached_path, file_hash) = row?;
+            println!("DB: Found cache entry - cached: {}, hash: {}", cached_path, file_hash);
+            cached_paths.push(cached_path);
+            thumbnail_hashes.push(file_hash);
+        }
+
+        println!("DB: Total entries found: {} cached, {} hashes", cached_paths.len(), thumbnail_hashes.len());
+
+        // Delete cache entries for this folder
+        let deleted = self.conn.execute(
+            "DELETE FROM cache_entries
+             WHERE folder_id IN (SELECT id FROM library_folders WHERE path = ?1)",
+            [path],
+        )?;
+
+        println!("DB: Deleted {} cache entries", deleted);
+
+        Ok((cached_paths, thumbnail_hashes))
     }
 
     // Get folder ID by path
@@ -159,6 +222,7 @@ impl Database {
     }
 
     // Update folder statistics
+    #[allow(dead_code)]
     pub fn update_folder_stats(&self, folder_id: i64, total_files: i64) -> Result<()> {
         self.conn.execute(
             "UPDATE library_folders

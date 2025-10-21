@@ -14,6 +14,7 @@ interface MediaStore {
   setScanProgress: (progress: number) => void;
   setSelectedMedia: (media: MediaFile | null) => void;
   clearMediaFiles: () => void;
+  removeMediaFromFolder: (folderPath: string) => void;
 }
 
 export const useMediaStore = create<MediaStore>((set) => ({
@@ -29,4 +30,18 @@ export const useMediaStore = create<MediaStore>((set) => ({
   setScanProgress: (progress) => set({ scanProgress: progress }),
   setSelectedMedia: (media) => set({ selectedMedia: media }),
   clearMediaFiles: () => set({ mediaFiles: [], selectedMedia: null }),
+  removeMediaFromFolder: (folderPath: string) => set((state) => {
+    const folderNormalized = folderPath.replace(/\\/g, '/');
+    const filteredFiles = state.mediaFiles.filter(file => {
+      const fileNormalized = file.filePath.replace(/\\/g, '/');
+      return !fileNormalized.startsWith(folderNormalized);
+    });
+    return {
+      mediaFiles: filteredFiles,
+      selectedMedia: state.selectedMedia &&
+        state.selectedMedia.filePath.replace(/\\/g, '/').startsWith(folderNormalized)
+        ? null
+        : state.selectedMedia
+    };
+  }),
 }));

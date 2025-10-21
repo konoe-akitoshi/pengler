@@ -16,18 +16,66 @@ pub async fn register_library_folder(folder_path: String) -> Result<(), String> 
 
 #[tauri::command]
 pub async fn unregister_library_folder(folder_path: String) -> Result<(), String> {
+    use crate::utils::short_hash;
+
+    println!("Unregistering library folder: {}", folder_path);
+
     let db = Database::new().map_err(|e| e.to_string())?;
 
-    // Get all cached file paths for this folder
-    let cached_paths = db.remove_library_folder(&folder_path)
+    // Get all cached file paths and thumbnail hashes for this folder
+    let (cached_paths, thumbnail_hashes) = db.remove_library_folder(&folder_path)
         .map_err(|e| e.to_string())?;
 
+    println!("Found {} cached files and {} thumbnails to delete", cached_paths.len(), thumbnail_hashes.len());
+
+    // Get cache folder from config
+    let config = crate::config::Config::load().map_err(|e| e.to_string())?;
+    let cache_dir = std::path::PathBuf::from(&config.cache_folder);
+    let thumbnails_dir = cache_dir.join("thumbnails");
+    let optimized_dir = cache_dir.join("optimized");
+
+    println!("Cache dir: {}", cache_dir.display());
+    println!("Thumbnails dir: {}", thumbnails_dir.display());
+    println!("Optimized dir: {}", optimized_dir.display());
+
     // Delete all cached files
-    for cached_path in cached_paths {
-        if let Err(e) = fs::remove_file(&cached_path) {
-            eprintln!("Failed to delete cached file {}: {}", cached_path, e);
+    let mut deleted_cached = 0;
+    for cached_path in &cached_paths {
+        println!("Attempting to delete cached file: {}", cached_path);
+        match fs::remove_file(cached_path) {
+            Ok(_) => {
+                println!("✓ Deleted: {}", cached_path);
+                deleted_cached += 1;
+            }
+            Err(e) => {
+                eprintln!("✗ Failed to delete cached file {}: {}", cached_path, e);
+            }
         }
     }
+
+    // Delete all thumbnail files
+    let mut deleted_thumbnails = 0;
+    for file_hash in &thumbnail_hashes {
+        let short_name = short_hash(file_hash);
+        let thumbnail_path = thumbnails_dir.join(format!("{}.webp", short_name));
+        println!("Attempting to delete thumbnail: {}", thumbnail_path.display());
+
+        if thumbnail_path.exists() {
+            match fs::remove_file(&thumbnail_path) {
+                Ok(_) => {
+                    println!("✓ Deleted thumbnail: {}", thumbnail_path.display());
+                    deleted_thumbnails += 1;
+                }
+                Err(e) => {
+                    eprintln!("✗ Failed to delete thumbnail {}: {}", thumbnail_path.display(), e);
+                }
+            }
+        } else {
+            println!("✗ Thumbnail not found: {}", thumbnail_path.display());
+        }
+    }
+
+    println!("Deletion complete: {} cached files, {} thumbnails", deleted_cached, deleted_thumbnails);
 
     Ok(())
 }
@@ -91,9 +139,75 @@ pub async fn get_database_cache_stats() -> Result<CacheStats, String> {
 }
 
 #[tauri::command]
+pub async fn clear_folder_cache(folder_path: String) -> Result<(), String> {
+    use crate::utils::short_hash;
+
+    println!("Clearing cache for folder: {}", folder_path);
+
+    let db = Database::new().map_err(|e| e.to_string())?;
+
+    // Get all cached file paths and thumbnail hashes for this folder
+    let (cached_paths, thumbnail_hashes) = db.clear_folder_cache(&folder_path)
+        .map_err(|e| e.to_string())?;
+
+    println!("Found {} cached files and {} thumbnails to delete", cached_paths.len(), thumbnail_hashes.len());
+
+    // Get cache folder from config
+    let config = crate::config::Config::load().map_err(|e| e.to_string())?;
+    let cache_dir = std::path::PathBuf::from(&config.cache_folder);
+    let thumbnails_dir = cache_dir.join("thumbnails");
+
+    // Delete all cached files
+    let mut deleted_cached = 0;
+    for cached_path in &cached_paths {
+        println!("Attempting to delete cached file: {}", cached_path);
+        match fs::remove_file(cached_path) {
+            Ok(_) => {
+                println!("✓ Deleted: {}", cached_path);
+                deleted_cached += 1;
+            }
+            Err(e) => {
+                eprintln!("✗ Failed to delete cached file {}: {}", cached_path, e);
+            }
+        }
+    }
+
+    // Delete all thumbnail files
+    let mut deleted_thumbnails = 0;
+    for file_hash in &thumbnail_hashes {
+        let short_name = short_hash(file_hash);
+        let thumbnail_path = thumbnails_dir.join(format!("{}.webp", short_name));
+        println!("Attempting to delete thumbnail: {}", thumbnail_path.display());
+
+        if thumbnail_path.exists() {
+            match fs::remove_file(&thumbnail_path) {
+                Ok(_) => {
+                    println!("✓ Deleted thumbnail: {}", thumbnail_path.display());
+                    deleted_thumbnails += 1;
+                }
+                Err(e) => {
+                    eprintln!("✗ Failed to delete thumbnail {}: {}", thumbnail_path.display(), e);
+                }
+            }
+        }
+    }
+
+    println!("Cache cleared: {} cached files, {} thumbnails", deleted_cached, deleted_thumbnails);
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn cleanup_orphaned_cache() -> Result<u64, String> {
+    use crate::utils::short_hash;
+
     let db = Database::new().map_err(|e| e.to_string())?;
     let mut cleaned_count = 0u64;
+
+    // Get cache folder from config
+    let config = crate::config::Config::load().map_err(|e| e.to_string())?;
+    let cache_dir = std::path::PathBuf::from(&config.cache_folder);
+    let thumbnails_dir = cache_dir.join("thumbnails");
 
     // Get all cache entries
     let folders = db.get_all_folders().map_err(|e| e.to_string())?;
@@ -102,11 +216,21 @@ pub async fn cleanup_orphaned_cache() -> Result<u64, String> {
         // Check if folder still exists
         if !Path::new(&folder_path).exists() {
             // Remove the folder and its cache
-            let cached_paths = db.remove_library_folder(&folder_path)
+            let (cached_paths, thumbnail_hashes) = db.remove_library_folder(&folder_path)
                 .map_err(|e| e.to_string())?;
 
+            // Delete cached files
             for cached_path in cached_paths {
                 if fs::remove_file(&cached_path).is_ok() {
+                    cleaned_count += 1;
+                }
+            }
+
+            // Delete thumbnail files
+            for file_hash in thumbnail_hashes {
+                let short_name = short_hash(&file_hash);
+                let thumbnail_path = thumbnails_dir.join(format!("{}.webp", short_name));
+                if thumbnail_path.exists() && fs::remove_file(&thumbnail_path).is_ok() {
                     cleaned_count += 1;
                 }
             }

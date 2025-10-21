@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type Page = 'home' | 'settings';
+export type Page = 'home' | 'settings' | 'tasks';
 
 interface AppState {
   currentPage: Page;

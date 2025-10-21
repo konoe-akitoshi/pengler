@@ -6,6 +6,7 @@ mod commands;
 mod utils;
 mod config;
 mod db;
+mod task_manager;
 
 use commands::{
     scan_folder,
@@ -21,8 +22,16 @@ use commands::{
     register_cache_entry,
     get_database_cache_stats,
     cleanup_orphaned_cache,
+    clear_folder_cache,
     optimize_media_file,
     batch_optimize_folder,
+    create_optimization_task,
+    get_all_tasks,
+    pause_task,
+    resume_task,
+    stop_task,
+    check_folder_has_running_task,
+    remove_optimization_task,
 };
 use config::{
     get_config,
@@ -56,8 +65,16 @@ fn main() {
             register_cache_entry,
             get_database_cache_stats,
             cleanup_orphaned_cache,
+            clear_folder_cache,
             optimize_media_file,
             batch_optimize_folder,
+            create_optimization_task,
+            get_all_tasks,
+            pause_task,
+            resume_task,
+            stop_task,
+            check_folder_has_running_task,
+            remove_optimization_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
