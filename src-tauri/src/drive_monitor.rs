@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter};
 
 pub struct DriveMonitor {
     known_drives: Arc<Mutex<HashSet<String>>>,
@@ -78,6 +78,7 @@ impl DriveMonitor {
         });
     }
 
+    #[allow(dead_code)]
     pub fn stop(&self) {
         let mut is_running = self.is_running.lock().unwrap();
         *is_running = false;

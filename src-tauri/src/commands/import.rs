@@ -4,7 +4,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
-use crate::models::{MediaFile, is_media_file};
+use crate::models::is_media_file;
 use crate::utils::hash_file;
 use crate::db::Database;
 
