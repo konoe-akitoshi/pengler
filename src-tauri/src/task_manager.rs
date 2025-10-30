@@ -78,7 +78,21 @@ impl Task {
 
     pub fn complete(&self) {
         let mut info = self.info.lock().unwrap();
-        info.status = TaskStatus::Completed;
+        // Only mark as completed if not already completed
+        if info.status != TaskStatus::Completed {
+            info.status = TaskStatus::Completed;
+        }
+    }
+
+    pub fn reset(&self, total_files: usize) {
+        let mut info = self.info.lock().unwrap();
+        info.total_files = total_files;
+        info.processed_files = 0;
+        info.optimized_files = 0;
+        info.failed_files = 0;
+        info.status = TaskStatus::Running;
+        self.should_pause.store(false, Ordering::SeqCst);
+        self.should_stop.store(false, Ordering::SeqCst);
     }
 
     pub fn is_paused(&self) -> bool {
@@ -163,6 +177,16 @@ impl TaskManager {
         let tasks = self.tasks.lock().unwrap();
         if let Some(task) = tasks.get(folder_path) {
             task.stop();
+            Ok(())
+        } else {
+            Err(format!("Task not found for folder: {}", folder_path))
+        }
+    }
+
+    pub fn reset_task(&self, folder_path: &str, total_files: usize) -> Result<(), String> {
+        let tasks = self.tasks.lock().unwrap();
+        if let Some(task) = tasks.get(folder_path) {
+            task.reset(total_files);
             Ok(())
         } else {
             Err(format!("Task not found for folder: {}", folder_path))

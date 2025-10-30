@@ -4,6 +4,8 @@ pub mod cache;
 pub mod cache_manager;
 pub mod optimizer;
 pub mod task_commands;
+pub mod watcher_commands;
+pub mod file_count;
 
 pub use scanner::scan_folder;
 pub use thumbnail::{generate_thumbnail, get_cache_stats, clear_cache};
@@ -30,4 +32,11 @@ pub use task_commands::{
     stop_task,
     check_folder_has_running_task,
     remove_optimization_task,
+    reset_optimization_task,
 };
+pub use watcher_commands::{
+    start_watching_folders,
+    stop_watching_folder,
+    get_watched_folders,
+};
+pub use file_count::count_media_files;

@@ -36,3 +36,8 @@ pub async fn remove_optimization_task(folder_path: String) -> Result<(), String>
     TASK_MANAGER.remove_task(&folder_path);
     Ok(())
 }
+
+#[tauri::command]
+pub async fn reset_optimization_task(folder_path: String, total_files: usize) -> Result<(), String> {
+    TASK_MANAGER.reset_task(&folder_path, total_files)
+}

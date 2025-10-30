@@ -1,33 +1,79 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useMediaStore } from '../../stores/mediaStore';
 import { motion } from 'framer-motion';
 
 function MediaViewer() {
-  const { selectedMedia, setSelectedMedia, mediaFiles } = useMediaStore();
+  const { selectedMedia, setSelectedMedia, mediaFiles, setShowBorder } = useMediaStore();
+  const borderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const showBorderWithTimeout = useCallback(() => {
+    // Clear any existing timeout
+    if (borderTimeoutRef.current) {
+      clearTimeout(borderTimeoutRef.current);
+    }
+
+    // Show border
+    setShowBorder(true);
+
+    // Hide border after 3 seconds
+    borderTimeoutRef.current = setTimeout(() => {
+      setShowBorder(false);
+    }, 3000);
+  }, [setShowBorder]);
+
+  const handleClose = useCallback(() => {
+    if (!selectedMedia) {
+      setSelectedMedia(null);
+      return;
+    }
+
+    const mediaIdToScrollTo = selectedMedia.id;
+
+    // Close the modal first
+    setSelectedMedia(null);
+
+    // Show border with timeout
+    showBorderWithTimeout();
+
+    // Use requestAnimationFrame to ensure DOM is updated before scrolling
+    // Double RAF to ensure all layout calculations are complete
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const element = document.getElementById(`media-${mediaIdToScrollTo}`);
+        if (element) {
+          element.scrollIntoView({
+            behavior: 'instant',
+            block: 'center',
+            inline: 'nearest'
+          });
+        }
+      });
+    });
+  }, [selectedMedia, setSelectedMedia, showBorderWithTimeout]);
 
   const navigateNext = useCallback(() => {
     if (!selectedMedia) return;
     const currentIndex = mediaFiles.findIndex((m) => m.id === selectedMedia.id);
-    console.log('Navigate next:', { currentIndex, totalFiles: mediaFiles.length, currentId: selectedMedia.id });
     if (currentIndex < mediaFiles.length - 1) {
       setSelectedMedia(mediaFiles[currentIndex + 1]);
+      showBorderWithTimeout();
     }
-  }, [selectedMedia, mediaFiles, setSelectedMedia]);
+  }, [selectedMedia, mediaFiles, setSelectedMedia, showBorderWithTimeout]);
 
   const navigatePrevious = useCallback(() => {
     if (!selectedMedia) return;
     const currentIndex = mediaFiles.findIndex((m) => m.id === selectedMedia.id);
-    console.log('Navigate previous:', { currentIndex, totalFiles: mediaFiles.length, currentId: selectedMedia.id });
     if (currentIndex > 0) {
       setSelectedMedia(mediaFiles[currentIndex - 1]);
+      showBorderWithTimeout();
     }
-  }, [selectedMedia, mediaFiles, setSelectedMedia]);
+  }, [selectedMedia, mediaFiles, setSelectedMedia, showBorderWithTimeout]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setSelectedMedia(null);
+        handleClose();
       } else if (e.key === 'ArrowRight') {
         navigateNext();
       } else if (e.key === 'ArrowLeft') {
@@ -36,8 +82,14 @@ function MediaViewer() {
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigateNext, navigatePrevious, setSelectedMedia]);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      // Cleanup timeout on unmount
+      if (borderTimeoutRef.current) {
+        clearTimeout(borderTimeoutRef.current);
+      }
+    };
+  }, [navigateNext, navigatePrevious, handleClose]);
 
   if (!selectedMedia) return null;
 
@@ -54,11 +106,11 @@ function MediaViewer() {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
       className="fixed inset-0 bg-black z-50 flex items-center justify-center"
-      onClick={() => setSelectedMedia(null)}
+      onClick={handleClose}
     >
       {/* Close button - top left */}
       <button
-        onClick={() => setSelectedMedia(null)}
+        onClick={handleClose}
         className="absolute top-6 left-6 z-10 text-white hover:text-gray-300 transition-colors"
       >
         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">

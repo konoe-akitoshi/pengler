@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, confirm } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { useMediaStore } from '../stores/mediaStore';
+import { useConfigStore } from '../stores/configStore';
 import { MediaFile } from '../types/media';
 import { Config } from '../types/config';
 
@@ -23,9 +24,9 @@ type SettingsTab = 'library' | 'tasks' | 'optimization' | 'about';
 
 function Settings() {
   const { setMediaFiles, clearMediaFiles, removeMediaFromFolder } = useMediaStore();
+  const { config, loadConfig, updateConfig } = useConfigStore();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('library');
-  const [config, setConfig] = useState<Config | null>(null);
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizationJobs, setOptimizationJobs] = useState<OptimizationJob[]>([]);
@@ -33,16 +34,7 @@ function Settings() {
   useEffect(() => {
     loadConfig();
     loadCacheStats();
-  }, []);
-
-  const loadConfig = async () => {
-    try {
-      const cfg = await invoke<Config>('get_config');
-      setConfig(cfg);
-    } catch (error) {
-      console.error('Failed to load config:', error);
-    }
-  };
+  }, [loadConfig]);
 
   const loadCacheStats = async () => {
     try {
@@ -66,7 +58,7 @@ function Settings() {
         const updatedConfig = await invoke<Config>('add_library_folder', {
           folder: selected,
         });
-        setConfig(updatedConfig);
+        updateConfig(updatedConfig);
 
         // Register in database
         await invoke('register_library_folder', {
@@ -195,6 +187,16 @@ function Settings() {
         }
       });
 
+      // Start watching folders for changes
+      try {
+        await invoke('start_watching_folders', {
+          folderPaths: folders,
+        });
+        console.log('Started watching folders for changes');
+      } catch (error) {
+        console.error('Failed to start file watcher:', error);
+      }
+
       // Reload cache stats after a delay
       setTimeout(() => {
         loadCacheStats();
@@ -216,6 +218,8 @@ function Settings() {
 
   const handleRemoveFolder = async (folder: string) => {
     try {
+      console.log('handleRemoveFolder called for:', folder);
+
       // Check if there's a running task for this folder
       const hasRunningTask = await invoke<boolean>('check_folder_has_running_task', {
         folderPath: folder,
@@ -229,27 +233,36 @@ function Settings() {
       }
 
       // Show confirmation dialog
-      const confirmed = window.confirm(
-        `Are you sure you want to remove this folder from your library?\n\n${folder}\n\nThis will delete all cached files and thumbnails for this folder.`
+      const confirmed = await confirm(
+        `Are you sure you want to remove this folder from your library?\n\n${folder}\n\nThis will delete all cached files and thumbnails for this folder.`,
+        { title: 'Remove Library Folder', kind: 'warning' }
       );
 
+      console.log('User confirmation:', confirmed);
+
       if (!confirmed) {
+        console.log('User cancelled removal');
         return;
       }
+
+      console.log('Proceeding with removal...');
 
       // Remove from config
       const updatedConfig = await invoke<Config>('remove_library_folder', {
         folder,
       });
-      setConfig(updatedConfig);
+      console.log('Config updated:', updatedConfig);
+      updateConfig(updatedConfig);
 
       // Unregister from database (will delete cached files)
       await invoke('unregister_library_folder', {
         folderPath: folder,
       });
+      console.log('Unregistered from database');
 
       // Remove media files from the UI
       removeMediaFromFolder(folder);
+      console.log('Media files removed from UI');
 
       // Reload cache stats
       loadCacheStats();
@@ -272,7 +285,7 @@ function Settings() {
         const updatedConfig = await invoke<Config>('set_cache_folder', {
           folder: selected,
         });
-        setConfig(updatedConfig);
+        updateConfig(updatedConfig);
       }
     } catch (error) {
       console.error('Failed to select cache folder:', error);
@@ -533,7 +546,7 @@ function Settings() {
                 value={config.optimization_quality}
                 onChange={(e) => {
                   const newConfig = { ...config, optimization_quality: parseInt(e.target.value) };
-                  setConfig(newConfig);
+                  updateConfig(newConfig);
                   invoke('update_config', { config: newConfig });
                 }}
                 className="w-full"
@@ -551,7 +564,7 @@ function Settings() {
                 value={config.max_resolution}
                 onChange={(e) => {
                   const newConfig = { ...config, max_resolution: parseInt(e.target.value) };
-                  setConfig(newConfig);
+                  updateConfig(newConfig);
                   invoke('update_config', { config: newConfig });
                 }}
                 className="bg-gray-700 text-white rounded px-3 py-2 text-sm w-full"

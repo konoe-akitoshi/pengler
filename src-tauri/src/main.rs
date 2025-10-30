@@ -7,6 +7,7 @@ mod utils;
 mod config;
 mod db;
 mod task_manager;
+mod file_watcher;
 
 use commands::{
     scan_folder,
@@ -32,7 +33,14 @@ use commands::{
     stop_task,
     check_folder_has_running_task,
     remove_optimization_task,
+    reset_optimization_task,
+    start_watching_folders,
+    stop_watching_folder,
+    get_watched_folders,
+    count_media_files,
 };
+use commands::watcher_commands::WatcherState;
+use std::sync::Mutex;
 use config::{
     get_config,
     update_config,
@@ -46,6 +54,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .manage(WatcherState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             scan_folder,
             generate_thumbnail,
@@ -75,6 +84,11 @@ fn main() {
             stop_task,
             check_folder_has_running_task,
             remove_optimization_task,
+            reset_optimization_task,
+            start_watching_folders,
+            stop_watching_folder,
+            get_watched_folders,
+            count_media_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -48,6 +48,10 @@ toml = "0.8"
 # Lazy static
 lazy_static = "1.5"
 
+# File system watching
+notify = "6.1"
+notify-debouncer-full = "0.3"
+
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-shell = "2.0"
 

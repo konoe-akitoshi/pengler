@@ -152,20 +152,40 @@ async fn optimize_media_file_internal(
         return Err(anyhow::anyhow!("Library folder has been removed: {}", folder_path));
     }
 
-    // Check if there's a task for this folder and if it's paused or stopped
+    // Check if there's a task for this folder and if it's paused, stopped, or completed
     if let Some(task) = TASK_MANAGER.get_task(folder_path) {
-        // Wait while paused
-        while task.is_paused() && !task.is_stopped() {
-            println!("Task paused, waiting...");
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
+        let info = task.get_info();
 
-        // Stop if requested
-        if task.is_stopped() {
+        // Don't process if task is stopped or completed
+        if info.status == crate::task_manager::TaskStatus::Stopped {
             task.increment_processed();
             task.increment_failed();
             println!("Task stopped, skipping optimization: {}", file_path);
             return Err(anyhow::anyhow!("Optimization task was stopped"));
+        }
+
+        if info.status == crate::task_manager::TaskStatus::Completed {
+            println!("Task already completed, skipping optimization: {}", file_path);
+            return Err(anyhow::anyhow!("Optimization task already completed"));
+        }
+
+        // Wait while paused
+        while task.is_paused() && !task.is_stopped() {
+            println!("Task paused, waiting...");
+            std::thread::sleep(std::time::Duration::from_millis(500));
+
+            // Re-check if stopped or completed while waiting
+            let current_info = task.get_info();
+            if current_info.status == crate::task_manager::TaskStatus::Stopped {
+                task.increment_processed();
+                task.increment_failed();
+                println!("Task stopped while paused, skipping optimization: {}", file_path);
+                return Err(anyhow::anyhow!("Optimization task was stopped"));
+            }
+            if current_info.status == crate::task_manager::TaskStatus::Completed {
+                println!("Task completed while paused, skipping optimization: {}", file_path);
+                return Err(anyhow::anyhow!("Optimization task already completed"));
+            }
         }
     }
 
@@ -178,15 +198,15 @@ async fn optimize_media_file_internal(
     let db = Database::new()?;
     if let Some(cached_path) = db.get_cached_path(file_hash)? {
         if Path::new(&cached_path).exists() {
-            println!("File already optimized: {}", cached_path);
-            // Update task counters for already cached files
+            println!("File already cached, skipping: {}", cached_path);
+            // Already cached files: only increment processed, not optimized
+            // (They were optimized in a previous run, not in this task)
             if let Some(task) = TASK_MANAGER.get_task(folder_path) {
                 task.increment_processed();
-                task.increment_optimized();
 
                 // Check if task is complete
                 let info = task.get_info();
-                if info.processed_files >= info.total_files {
+                if info.processed_files >= info.total_files && info.status != crate::task_manager::TaskStatus::Completed {
                     task.complete();
                     println!("Task completed for folder: {}", folder_path);
                 }
@@ -257,7 +277,7 @@ async fn optimize_media_file_internal(
 
         // Check if task is complete
         let info = task.get_info();
-        if info.processed_files >= info.total_files {
+        if info.processed_files >= info.total_files && info.status != crate::task_manager::TaskStatus::Completed {
             task.complete();
             println!("Task completed for folder: {}", folder_path);
         }

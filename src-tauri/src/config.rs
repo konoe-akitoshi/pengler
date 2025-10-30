@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::RwLock;
 use anyhow::Result;
+use lazy_static::lazy_static;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -21,6 +23,11 @@ fn default_max_resolution() -> u32 {
     1920
 }
 
+// Global in-memory config cache
+lazy_static! {
+    static ref CONFIG_MANAGER: RwLock<Option<Config>> = RwLock::new(None);
+}
+
 impl Default for Config {
     fn default() -> Self {
         let cache_folder = get_default_cache_folder()
@@ -36,7 +43,30 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Load config from cache, or from disk if not cached
     pub fn load() -> Result<Self> {
+        // Try to get from cache first
+        {
+            let cache = CONFIG_MANAGER.read().unwrap();
+            if let Some(config) = cache.as_ref() {
+                return Ok(config.clone());
+            }
+        }
+
+        // Not in cache, load from disk
+        let config = Self::load_from_disk()?;
+
+        // Update cache
+        {
+            let mut cache = CONFIG_MANAGER.write().unwrap();
+            *cache = Some(config.clone());
+        }
+
+        Ok(config)
+    }
+
+    /// Load config directly from disk (bypasses cache)
+    fn load_from_disk() -> Result<Self> {
         let config_path = get_config_path()?;
 
         if config_path.exists() {
@@ -60,6 +90,12 @@ impl Config {
 
         let toml_string = toml::to_string_pretty(self)?;
         fs::write(&config_path, toml_string)?;
+
+        // Update cache after saving
+        {
+            let mut cache = CONFIG_MANAGER.write().unwrap();
+            *cache = Some(self.clone());
+        }
 
         Ok(())
     }

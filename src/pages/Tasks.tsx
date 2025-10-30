@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useConfigStore } from '../stores/configStore';
 
 interface TaskInfo {
   folder_path: string;
@@ -29,16 +30,7 @@ interface MediaFile {
 
 function Tasks() {
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
-  const [config, setConfig] = useState<Config | null>(null);
-
-  const loadConfig = async () => {
-    try {
-      const cfg = await invoke<Config>('get_config');
-      setConfig(cfg);
-    } catch (error) {
-      console.error('Failed to load config:', error);
-    }
-  };
+  const { config, loadConfig } = useConfigStore();
 
   const loadTasks = async () => {
     try {
@@ -53,10 +45,10 @@ function Tasks() {
     loadConfig();
     loadTasks();
 
-    // Poll for updates every 2 seconds
-    const interval = setInterval(loadTasks, 2000);
+    // Poll for updates every 500ms for more responsive UI
+    const interval = setInterval(loadTasks, 500);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadConfig]);
 
   const handlePause = async (folderPath: string) => {
     try {
@@ -106,9 +98,6 @@ function Tasks() {
 
   const handleRegenerate = async (folderPath: string) => {
     try {
-      // Remove old task
-      await invoke('remove_optimization_task', { folderPath });
-
       // Clear existing cache for this folder
       console.log('Clearing cache for folder:', folderPath);
       await invoke('clear_folder_cache', { folderPath });
@@ -118,8 +107,8 @@ function Tasks() {
       const files = await invoke<MediaFile[]>('scan_folder', { path: folderPath });
       console.log(`Found ${files.length} files to optimize`);
 
-      // Create new task
-      await invoke('create_optimization_task', {
+      // Reset existing task instead of removing and creating new one
+      await invoke('reset_optimization_task', {
         folderPath,
         totalFiles: files.length,
       });
@@ -176,9 +165,8 @@ function Tasks() {
         return;
       }
 
-      // Remove old task and create new one for failed files only
-      await invoke('remove_optimization_task', { folderPath });
-      await invoke('create_optimization_task', {
+      // Reset task for failed files only (don't remove to avoid UI flicker)
+      await invoke('reset_optimization_task', {
         folderPath,
         totalFiles: failedFiles.length,
       });
@@ -271,27 +259,67 @@ function Tasks() {
               const task = tasks.find(t => t.folder_path === folderPath);
 
               if (!task) {
-                // No task exists for this folder - show placeholder
+                // No task exists for this folder - show generate button
                 return (
                   <div
                     key={folderPath}
-                    className="bg-gray-800 rounded p-6 border border-gray-700 opacity-50"
+                    className="bg-gray-800 rounded p-6 border border-gray-700"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-medium uppercase text-gray-500">
-                            No Task
-                          </span>
-                        </div>
-                        <div className="text-sm text-gray-300 font-mono truncate">
+                        <div className="text-sm text-gray-300 font-mono truncate mb-3">
                           {folderPath}
+                        </div>
+                        <div className="text-sm text-gray-400 mb-4">
+                          No optimization task exists for this folder yet.
                         </div>
                       </div>
                     </div>
-                    <div className="text-sm text-gray-500 mt-3">
-                      Load this library folder from Settings to create an optimization task
-                    </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          // Scan folder for media files
+                          const files = await invoke<MediaFile[]>('scan_folder', { path: folderPath });
+
+                          if (files.length === 0) {
+                            alert('No media files found in this folder.');
+                            return;
+                          }
+
+                          // Create new task
+                          await invoke('create_optimization_task', {
+                            folderPath,
+                            totalFiles: files.length,
+                          });
+
+                          // Start optimization for all files
+                          for (let i = 0; i < files.length; i++) {
+                            const file = files[i];
+                            invoke('optimize_media_file', {
+                              folderPath,
+                              filePath: file.filePath,
+                              fileHash: file.fileHash,
+                              mediaType: file.mediaType,
+                            }).catch((error) => {
+                              console.error(`Failed to optimize ${file.filePath}:`, error);
+                            });
+
+                            // Small delay every 10 files to prevent overwhelming
+                            if (i > 0 && i % 10 === 0) {
+                              await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+                          }
+
+                          await loadTasks();
+                        } catch (error) {
+                          console.error('Failed to generate task:', error);
+                          alert(`Failed to generate task: ${error}`);
+                        }
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-4 rounded transition-colors"
+                    >
+                      🔄 Generate Optimization Task
+                    </button>
                   </div>
                 );
               }
