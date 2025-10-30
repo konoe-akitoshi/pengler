@@ -3,6 +3,7 @@ use std::fs;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
+use chrono::{DateTime, Utc};
 
 use crate::models::is_media_file;
 use crate::utils::hash_file;
@@ -130,11 +131,45 @@ pub async fn import_files(
             continue;
         }
 
+        // Get file metadata to determine date
+        let metadata = match fs::metadata(&source) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("Failed to get metadata for {}: {}", source_file, e);
+                continue;
+            }
+        };
+
+        // Get modification date
+        let modified_time = match metadata.modified() {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("Failed to get modification time for {}: {}", source_file, e);
+                continue;
+            }
+        };
+
+        // Convert to DateTime
+        let datetime: DateTime<Utc> = modified_time.into();
+
+        // Create folder structure: Year/YYYY-MM-DD
+        let year = datetime.format("%Y").to_string();
+        let date = datetime.format("%Y-%m-%d").to_string();
+
+        let year_folder = dest_path.join(&year);
+        let date_folder = year_folder.join(&date);
+
+        // Create folders if they don't exist
+        if let Err(e) = fs::create_dir_all(&date_folder) {
+            eprintln!("Failed to create folder structure {}: {}", date_folder.display(), e);
+            continue;
+        }
+
         let file_name = source.file_name()
             .and_then(|n| n.to_str())
             .ok_or_else(|| "Invalid file name".to_string())?;
 
-        let dest_file = dest_path.join(file_name);
+        let dest_file = date_folder.join(file_name);
 
         // Handle filename conflicts
         let final_dest = if dest_file.exists() {
@@ -152,7 +187,7 @@ pub async fn import_files(
                 } else {
                     format!("{}_{}.{}", stem, counter, ext)
                 };
-                let new_path = dest_path.join(new_name);
+                let new_path = date_folder.join(new_name);
                 if !new_path.exists() {
                     break new_path;
                 }
