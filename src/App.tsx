@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
+import { listen } from '@tauri-apps/api/event';
 import { useAppStore } from './stores/appStore';
 import { useMediaStore } from './stores/mediaStore';
 import Gallery from './components/Gallery/Gallery';
@@ -11,8 +12,26 @@ import Import from './pages/Import';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const currentPage = useAppStore((state) => state.currentPage);
+  const { currentPage, setCurrentPage } = useAppStore();
   const selectedMedia = useMediaStore((state) => state.selectedMedia);
+
+  useEffect(() => {
+    // Listen for SD card insertion events
+    const unlistenInserted = listen<string>('sd-card-inserted', (event) => {
+      console.log('SD card inserted:', event.payload);
+      // Automatically navigate to import page
+      setCurrentPage('import');
+    });
+
+    const unlistenRemoved = listen<string>('sd-card-removed', (event) => {
+      console.log('SD card removed:', event.payload);
+    });
+
+    return () => {
+      unlistenInserted.then(fn => fn());
+      unlistenRemoved.then(fn => fn());
+    };
+  }, [setCurrentPage]);
 
   return (
     <div className="flex h-screen bg-gray-900 text-white">

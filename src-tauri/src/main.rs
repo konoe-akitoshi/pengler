@@ -8,6 +8,7 @@ mod config;
 mod db;
 mod task_manager;
 mod file_watcher;
+mod drive_monitor;
 
 use commands::{
     scan_folder,
@@ -51,6 +52,7 @@ use config::{
     remove_library_folder,
     set_cache_folder,
 };
+use drive_monitor::DriveMonitor;
 
 fn main() {
     tauri::Builder::default()
@@ -58,6 +60,12 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .manage(WatcherState(Mutex::new(None)))
+        .setup(|app| {
+            // Start drive monitoring
+            let drive_monitor = DriveMonitor::new();
+            drive_monitor.start(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             scan_folder,
             generate_thumbnail,

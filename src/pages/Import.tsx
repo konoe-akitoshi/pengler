@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { ImportCandidate, ImportSelection } from '../types/import';
@@ -26,6 +27,32 @@ function Import() {
       setDestinationFolder(config.library_folders[0]);
     }
   }, [config, destinationFolder]);
+
+  useEffect(() => {
+    // Listen for SD card insertion events when on Import page
+    const unlistenInserted = listen<string>('sd-card-inserted', async (event) => {
+      const drivePath = event.payload;
+      console.log('SD card inserted on Import page:', drivePath);
+
+      // Update removable drives list
+      await detectRemovableDrives();
+
+      // Auto-scan the newly inserted drive
+      setSourcePath(drivePath);
+      await scanSource(drivePath);
+    });
+
+    const unlistenRemoved = listen<string>('sd-card-removed', async (event) => {
+      console.log('SD card removed:', event.payload);
+      // Refresh the drives list
+      await detectRemovableDrives();
+    });
+
+    return () => {
+      unlistenInserted.then(fn => fn());
+      unlistenRemoved.then(fn => fn());
+    };
+  }, []);
 
   const detectRemovableDrives = async () => {
     try {
