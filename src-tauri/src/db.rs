@@ -272,6 +272,17 @@ impl Database {
 
         Ok(stats)
     }
+
+    // Check if a file with this hash already exists
+    pub fn check_file_exists(&self, file_hash: &str) -> Result<bool> {
+        let mut stmt = self.conn.prepare(
+            "SELECT COUNT(*) FROM cache_entries WHERE file_hash = ?1"
+        )?;
+
+        let count: i64 = stmt.query_row([file_hash], |row| row.get(0))?;
+
+        Ok(count > 0)
+    }
 }
 
 #[derive(Debug, serde::Serialize)]

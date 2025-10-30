@@ -6,6 +6,7 @@ pub mod optimizer;
 pub mod task_commands;
 pub mod watcher_commands;
 pub mod file_count;
+pub mod import;
 
 pub use scanner::scan_folder;
 pub use thumbnail::{generate_thumbnail, get_cache_stats, clear_cache};
@@ -40,3 +41,8 @@ pub use watcher_commands::{
     get_watched_folders,
 };
 pub use file_count::count_media_files;
+pub use import::{
+    scan_import_source,
+    import_files,
+    detect_removable_drives,
+};
