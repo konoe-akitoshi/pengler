@@ -38,6 +38,9 @@ use commands::{
     stop_watching_folder,
     get_watched_folders,
     count_media_files,
+    scan_import_source,
+    import_files,
+    detect_removable_drives,
 };
 use commands::watcher_commands::WatcherState;
 use std::sync::Mutex;
@@ -89,6 +92,9 @@ fn main() {
             stop_watching_folder,
             get_watched_folders,
             count_media_files,
+            scan_import_source,
+            import_files,
+            detect_removable_drives,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

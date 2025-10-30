@@ -8,7 +8,7 @@ interface SidebarProps {
 }
 
 interface NavItem {
-  id: 'home' | 'settings' | 'tasks';
+  id: 'home' | 'settings' | 'tasks' | 'import';
   label: string;
   icon: JSX.Element;
 }
@@ -25,6 +25,15 @@ const navItems: NavItem[] = [
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+      </svg>
+    ),
+  },
+  {
+    id: 'import',
+    label: 'Import',
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
       </svg>
     ),
   },
@@ -90,7 +99,7 @@ interface MobileSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
   currentPage: string;
-  setCurrentPage: (page: 'home' | 'settings' | 'tasks') => void;
+  setCurrentPage: (page: 'home' | 'settings' | 'tasks' | 'import') => void;
   photoCount: number;
 }
 
@@ -126,7 +135,7 @@ interface DesktopSidebarProps {
   showLabels: boolean;
   isMini: boolean;
   currentPage: string;
-  setCurrentPage: (page: 'home' | 'settings' | 'tasks') => void;
+  setCurrentPage: (page: 'home' | 'settings' | 'tasks' | 'import') => void;
   photoCount: number;
   onHoverChange: (isHovered: boolean) => void;
 }
@@ -180,13 +189,13 @@ function SidebarHeader({ onClose }: SidebarHeaderProps) {
 // Sidebar Navigation Component
 interface SidebarNavProps {
   currentPage: string;
-  setCurrentPage: (page: 'home' | 'settings' | 'tasks') => void;
+  setCurrentPage: (page: 'home' | 'settings' | 'tasks' | 'import') => void;
   showLabels?: boolean;
   onItemClick?: () => void;
 }
 
 function SidebarNav({ currentPage, setCurrentPage, showLabels = true, onItemClick }: SidebarNavProps) {
-  const handleClick = (pageId: 'home' | 'settings' | 'tasks') => {
+  const handleClick = (pageId: 'home' | 'settings' | 'tasks' | 'import') => {
     setCurrentPage(pageId);
     onItemClick?.();
   };
