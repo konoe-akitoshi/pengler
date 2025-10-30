@@ -37,9 +37,15 @@ function Import() {
       // Update removable drives list
       await detectRemovableDrives();
 
-      // Auto-scan the newly inserted drive
-      setSourcePath(drivePath);
-      await scanSource(drivePath);
+      // Ask user before scanning
+      const confirmed = window.confirm(
+        `SD card detected at ${drivePath}. Would you like to scan for photos?`
+      );
+
+      if (confirmed) {
+        setSourcePath(drivePath);
+        await scanSource(drivePath);
+      }
     });
 
     const unlistenRemoved = listen<string>('sd-card-removed', async (event) => {
