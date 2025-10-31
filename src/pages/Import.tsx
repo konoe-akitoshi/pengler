@@ -350,12 +350,15 @@ function Import() {
                     onClick={() => toggleSelection(candidate.file_path)}
                   >
                     {/* Thumbnail */}
-                    <div className="aspect-square bg-gray-800 flex items-center justify-center">
+                    <div className="aspect-square bg-gray-800 flex items-center justify-center overflow-hidden">
                       {candidate.media_type === 'image' ? (
                         <img
-                          src={convertFileSrc(candidate.file_path)}
+                          src={convertFileSrc(candidate.thumbnail_path || candidate.file_path)}
                           alt={candidate.file_name}
                           className="w-full h-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                          style={{ contentVisibility: 'auto' }}
                         />
                       ) : (
                         <div className="text-4xl">🎬</div>

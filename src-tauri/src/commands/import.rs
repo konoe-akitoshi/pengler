@@ -18,6 +18,7 @@ pub struct ImportCandidate {
     pub is_duplicate: bool,
     pub media_type: String,
     pub modified_at: String,
+    pub thumbnail_path: Option<String>,
 }
 
 #[tauri::command]
@@ -98,6 +99,13 @@ fn process_import_candidate(path: &Path, db: &Database) -> Result<ImportCandidat
         .map(|t| format!("{:?}", t).to_lowercase())
         .unwrap_or_else(|| "unknown".to_string());
 
+    // Generate thumbnail for preview (temporary, in system temp folder)
+    let thumbnail_path = if media_type == "image" {
+        generate_temp_thumbnail(path).ok()
+    } else {
+        None
+    };
+
     Ok(ImportCandidate {
         file_path: path.to_string_lossy().to_string(),
         file_name,
@@ -106,7 +114,28 @@ fn process_import_candidate(path: &Path, db: &Database) -> Result<ImportCandidat
         is_duplicate,
         media_type,
         modified_at: modified_at_str,
+        thumbnail_path,
     })
+}
+
+fn generate_temp_thumbnail(source_path: &Path) -> Result<String> {
+    use image::imageops::FilterType;
+
+    // Open and resize image
+    let img = image::open(source_path)?;
+    let thumbnail = img.resize(400, 400, FilterType::Lanczos3);
+
+    // Save to temp directory
+    let temp_dir = std::env::temp_dir();
+    let file_name = source_path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("thumb");
+    let thumb_filename = format!("pengler_preview_{}.jpg", file_name);
+    let thumb_path = temp_dir.join(thumb_filename);
+
+    thumbnail.save(&thumb_path)?;
+
+    Ok(thumb_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]

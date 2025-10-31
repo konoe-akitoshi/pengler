@@ -6,6 +6,7 @@ export interface ImportCandidate {
   is_duplicate: boolean;
   media_type: string;
   modified_at: string;
+  thumbnail_path?: string;
 }
 
 export interface ImportSelection {
