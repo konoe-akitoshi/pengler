@@ -175,8 +175,10 @@ function Import() {
 
     // Show confirmation dialog BEFORE any state changes
     console.log('Showing confirmation dialog...');
-    const confirmed = window.confirm(
-      `Import ${selectedFiles.length} file(s) to ${destinationFolder}?`
+    const confirmed = await Promise.resolve(
+      window.confirm(
+        `Import ${selectedFiles.length} file(s) to ${destinationFolder}?`
+      )
     );
     console.log('Confirmation result:', confirmed);
 
