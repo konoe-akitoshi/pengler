@@ -152,6 +152,12 @@ function Import() {
   };
 
   const handleImport = async () => {
+    // Prevent double-clicks or multiple simultaneous imports
+    if (isImporting) {
+      console.log('Import already in progress, ignoring duplicate call');
+      return;
+    }
+
     // Validate before showing confirmation
     if (!destinationFolder) {
       alert('Please select a destination folder');
@@ -174,10 +180,12 @@ function Import() {
 
     // User cancelled - exit immediately without any state changes
     if (!confirmed) {
+      console.log('Import cancelled by user');
       return;
     }
 
     // Only after confirmation, start the import process
+    console.log('Starting import process...');
     setIsImporting(true);
     try {
       const imported = await invoke<string[]>('import_files', {
