@@ -4,6 +4,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 use chrono::{DateTime, Utc};
+use rayon::prelude::*;
 
 use crate::models::is_media_file;
 use crate::utils::hash_file;
@@ -48,19 +49,29 @@ pub async fn scan_import_source(source_path: String) -> Result<Vec<ImportCandida
 
     println!("Found {} media files in source", entries.len());
 
-    // Get database to check for duplicates
-    let db = Database::new().map_err(|e| format!("Failed to open database: {}", e))?;
+    // Process files in parallel using rayon
+    // Each thread gets its own database connection
+    let candidates: Vec<ImportCandidate> = entries
+        .into_par_iter()
+        .filter_map(|path| {
+            // Create database connection per thread
+            let db = match Database::new() {
+                Ok(db) => db,
+                Err(e) => {
+                    eprintln!("Failed to open database: {}", e);
+                    return None;
+                }
+            };
 
-    // Process each file
-    let mut candidates = Vec::new();
-    for path in entries {
-        match process_import_candidate(&path, &db) {
-            Ok(candidate) => candidates.push(candidate),
-            Err(e) => {
-                eprintln!("Failed to process {}: {}", path.display(), e);
+            match process_import_candidate(&path, &db) {
+                Ok(candidate) => Some(candidate),
+                Err(e) => {
+                    eprintln!("Failed to process {}: {}", path.display(), e);
+                    None
+                }
             }
-        }
-    }
+        })
+        .collect();
 
     println!("Processed {} candidates ({} duplicates)",
         candidates.len(),
