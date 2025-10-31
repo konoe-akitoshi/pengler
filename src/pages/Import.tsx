@@ -174,9 +174,11 @@ function Import() {
     }
 
     // Show confirmation dialog BEFORE any state changes
+    console.log('Showing confirmation dialog...');
     const confirmed = window.confirm(
       `Import ${selectedFiles.length} file(s) to ${destinationFolder}?`
     );
+    console.log('Confirmation result:', confirmed);
 
     // User cancelled - exit immediately without any state changes
     if (!confirmed) {
@@ -185,7 +187,7 @@ function Import() {
     }
 
     // Only after confirmation, start the import process
-    console.log('Starting import process...');
+    console.log('User confirmed, starting import process...');
     setIsImporting(true);
     try {
       const imported = await invoke<string[]>('import_files', {
