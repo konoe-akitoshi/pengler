@@ -122,6 +122,15 @@ pub async fn import_files(
 
     println!("Importing {} files to {}", files.len(), destination_folder);
 
+    // Get database connection for registering imported files
+    let db = Database::new()
+        .map_err(|e| format!("Failed to open database: {}", e))?;
+
+    // Get or create library folder entry
+    let folder_hash = crate::db::generate_folder_hash(&destination_folder);
+    let folder_id = db.add_library_folder(&destination_folder, &folder_hash)
+        .map_err(|e| format!("Failed to register library folder: {}", e))?;
+
     let mut imported_files = Vec::new();
 
     for source_file in files {
@@ -201,6 +210,32 @@ pub async fn import_files(
         match fs::copy(&source, &final_dest) {
             Ok(_) => {
                 println!("Imported: {} -> {}", source_file, final_dest.display());
+
+                // Calculate hash of the imported file and register it in database
+                if let Ok(file_hash) = hash_file(&source) {
+                    let file_metadata = fs::metadata(&final_dest).ok();
+                    let file_size = file_metadata.as_ref().map(|m| m.len() as i64).unwrap_or(0);
+
+                    let media_type = is_media_file(final_dest.to_str().unwrap_or(""))
+                        .map(|t| format!("{:?}", t).to_lowercase())
+                        .unwrap_or_else(|| "unknown".to_string());
+
+                    // Register in database to track duplicates
+                    if let Err(e) = db.add_cache_entry(
+                        folder_id,
+                        final_dest.to_str().unwrap_or(""),
+                        &file_hash,
+                        final_dest.to_str().unwrap_or(""),
+                        &media_type,
+                        file_size,
+                        file_size, // Same size since we're not creating thumbnails here
+                    ) {
+                        eprintln!("Failed to register file in database: {}", e);
+                    } else {
+                        println!("Registered in database: {}", file_hash);
+                    }
+                }
+
                 imported_files.push(final_dest.to_string_lossy().to_string());
             }
             Err(e) => {
