@@ -152,6 +152,7 @@ function Import() {
   };
 
   const handleImport = async () => {
+    // Validate before showing confirmation
     if (!destinationFolder) {
       alert('Please select a destination folder');
       return;
@@ -166,12 +167,17 @@ function Import() {
       return;
     }
 
+    // Show confirmation dialog BEFORE any state changes
     const confirmed = window.confirm(
       `Import ${selectedFiles.length} file(s) to ${destinationFolder}?`
     );
 
-    if (!confirmed) return;
+    // User cancelled - exit immediately without any state changes
+    if (!confirmed) {
+      return;
+    }
 
+    // Only after confirmation, start the import process
     setIsImporting(true);
     try {
       const imported = await invoke<string[]>('import_files', {
