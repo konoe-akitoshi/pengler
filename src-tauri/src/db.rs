@@ -55,6 +55,26 @@ impl Database {
             [],
         )?;
 
+        // Media files table - stores MediaFile information for quick loading
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS media_files (
+                id INTEGER PRIMARY KEY,
+                folder_id INTEGER NOT NULL,
+                file_path TEXT NOT NULL UNIQUE,
+                file_hash TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                width INTEGER NOT NULL,
+                height INTEGER NOT NULL,
+                taken_at TEXT,
+                modified_at TEXT NOT NULL,
+                thumbnail_path TEXT,
+                media_type TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (folder_id) REFERENCES library_folders(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
         // Create indexes for faster lookups
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_cache_folder
@@ -65,6 +85,18 @@ impl Database {
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_cache_hash
              ON cache_entries(file_hash)",
+            [],
+        )?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_media_folder
+             ON media_files(folder_id)",
+            [],
+        )?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_media_hash
+             ON media_files(file_hash)",
             [],
         )?;
 
@@ -273,16 +305,163 @@ impl Database {
         Ok(stats)
     }
 
-    // Check if a file with this hash already exists
+    // Check if a file with this hash already exists and the file actually exists on disk
     pub fn check_file_exists(&self, file_hash: &str) -> Result<bool> {
         let mut stmt = self.conn.prepare(
-            "SELECT COUNT(*) FROM cache_entries WHERE file_hash = ?1"
+            "SELECT original_path FROM cache_entries WHERE file_hash = ?1"
         )?;
 
-        let count: i64 = stmt.query_row([file_hash], |row| row.get(0))?;
+        let paths: Vec<String> = stmt
+            .query_map([file_hash], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
 
-        Ok(count > 0)
+        // Check if any of the files with this hash actually exist on disk
+        let mut found_existing = false;
+        for path in &paths {
+            if std::path::Path::new(path).exists() {
+                found_existing = true;
+                break;
+            }
+        }
+
+        // If no matching file exists on disk, clean up stale database entries
+        if !paths.is_empty() && !found_existing {
+            self.conn.execute(
+                "DELETE FROM cache_entries WHERE file_hash = ?1",
+                [file_hash],
+            )?;
+        }
+
+        Ok(found_existing)
     }
+
+    // Get all cache entries for debugging
+    pub fn get_all_cache_entries(&self) -> Result<Vec<(String, String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT file_hash, original_path, media_type FROM cache_entries ORDER BY created_at DESC LIMIT 100"
+        )?;
+
+        let entries = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,  // file_hash
+                    row.get::<_, String>(1)?,  // original_path
+                    row.get::<_, String>(2)?,  // media_type
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<(String, String, String)>>>()?;
+
+        Ok(entries)
+    }
+
+    // Get total count of entries in database
+    pub fn get_total_entry_count(&self) -> Result<i64> {
+        let mut stmt = self.conn.prepare("SELECT COUNT(*) FROM cache_entries")?;
+        let count = stmt.query_row([], |row| row.get(0))?;
+        Ok(count)
+    }
+
+    // Get total count of media files in database
+    pub fn get_media_files_count(&self) -> Result<i64> {
+        let mut stmt = self.conn.prepare("SELECT COUNT(*) FROM media_files")?;
+        let count = stmt.query_row([], |row| row.get(0))?;
+        Ok(count)
+    }
+
+    // Add or update a media file in the database
+    pub fn upsert_media_file(
+        &self,
+        folder_id: i64,
+        file_path: &str,
+        file_hash: &str,
+        file_size: i64,
+        width: i32,
+        height: i32,
+        taken_at: Option<&str>,
+        modified_at: &str,
+        thumbnail_path: Option<&str>,
+        media_type: &str,
+        created_at: &str,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO media_files
+             (folder_id, file_path, file_hash, file_size, width, height, taken_at, modified_at, thumbnail_path, media_type, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params![
+                folder_id,
+                file_path,
+                file_hash,
+                file_size,
+                width,
+                height,
+                taken_at,
+                modified_at,
+                thumbnail_path,
+                media_type,
+                created_at,
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    // Load all media files from database
+    pub fn load_all_media_files(&self) -> Result<Vec<MediaFileDb>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, folder_id, file_path, file_hash, file_size, width, height,
+                    taken_at, modified_at, thumbnail_path, media_type, created_at
+             FROM media_files
+             ORDER BY modified_at DESC"
+        )?;
+
+        let files = stmt
+            .query_map([], |row| {
+                Ok(MediaFileDb {
+                    id: row.get(0)?,
+                    folder_id: row.get(1)?,
+                    file_path: row.get(2)?,
+                    file_hash: row.get(3)?,
+                    file_size: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    taken_at: row.get(7)?,
+                    modified_at: row.get(8)?,
+                    thumbnail_path: row.get(9)?,
+                    media_type: row.get(10)?,
+                    created_at: row.get(11)?,
+                })
+            })?
+            .collect::<SqlResult<Vec<MediaFileDb>>>()?;
+
+        Ok(files)
+    }
+
+    // Delete a specific media file by path
+    pub fn delete_media_file_by_path(&self, file_path: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM media_files WHERE file_path = ?1",
+            [file_path],
+        )?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct MediaFileDb {
+    pub id: i64,
+    pub folder_id: i64,
+    pub file_path: String,
+    pub file_hash: String,
+    pub file_size: i64,
+    pub width: i32,
+    pub height: i32,
+    pub taken_at: Option<String>,
+    pub modified_at: String,
+    pub thumbnail_path: Option<String>,
+    pub media_type: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, serde::Serialize)]

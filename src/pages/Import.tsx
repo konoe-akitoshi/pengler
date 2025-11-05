@@ -95,26 +95,69 @@ function Import() {
 
   const scanSource = async (path: string) => {
     setIsScanning(true);
-    try {
-      const scanned = await invoke<ImportCandidate[]>('scan_import_source', {
-        sourcePath: path,
+    setCandidates([]);
+    setSelection({});
+
+    // Set up listeners before starting the scan
+    const unlistenCandidate = await listen<ImportCandidate>('import-scan-candidate', (event) => {
+      const candidate = event.payload;
+      console.log('Received candidate (preview):', candidate.file_name, 'total before:', candidates.length);
+
+      // Add preview candidate immediately
+      setCandidates(prev => {
+        const newCandidates = [...prev, candidate];
+        console.log('Updated candidates count:', newCandidates.length);
+        return newCandidates;
+      });
+      // Don't add to selection yet - wait for duplicate check
+    });
+
+    const unlistenUpdate = await listen<ImportCandidate>('import-scan-candidate-update', (event) => {
+      const updated = event.payload;
+      console.log('Updated candidate:', updated.file_name, 'duplicate:', updated.is_duplicate);
+
+      // Update the candidate with duplicate status
+      setCandidates(prev => {
+        const newCandidates = prev.map(c => c.file_path === updated.file_path ? updated : c);
+        console.log('After update, candidates count:', newCandidates.length);
+        return newCandidates;
       });
 
-      setCandidates(scanned);
+      // Now add to selection (auto-select non-duplicates)
+      setSelection(prev => ({
+        ...prev,
+        [updated.file_path]: !updated.is_duplicate,
+      }));
+    });
 
-      // Auto-select non-duplicates
-      const newSelection: ImportSelection = {};
-      scanned.forEach(candidate => {
-        newSelection[candidate.file_path] = !candidate.is_duplicate;
-      });
-      setSelection(newSelection);
-
-      console.log(`Scanned ${scanned.length} candidates, ${scanned.filter(c => !c.is_duplicate).length} new files`);
-    } catch (error) {
-      console.error('Failed to scan source:', error);
-      alert(`Failed to scan source: ${error}`);
-    } finally {
+    const unlistenComplete = await listen('import-scan-complete', () => {
+      console.log('Scan complete');
       setIsScanning(false);
+      unlistenCandidate();
+      unlistenUpdate();
+      unlistenComplete();
+    });
+
+    try {
+      // Start the scan (don't await - let it run in background)
+      invoke('scan_import_source', {
+        sourcePath: path,
+      }).catch(error => {
+        console.error('Failed to scan source:', error);
+        alert(`Failed to scan source: ${error}`);
+        setIsScanning(false);
+        unlistenCandidate();
+        unlistenUpdate();
+        unlistenComplete();
+      });
+
+    } catch (error) {
+      console.error('Failed to start scan:', error);
+      alert(`Failed to start scan: ${error}`);
+      setIsScanning(false);
+      unlistenCandidate();
+      unlistenUpdate();
+      unlistenComplete();
     }
   };
 
@@ -234,6 +277,24 @@ function Import() {
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto px-8 py-6">
+        {/* Debug Button */}
+        <div className="mb-6">
+          <button
+            onClick={async () => {
+              try {
+                const debug = await invoke<string>('debug_database_entries');
+                console.log(debug);
+                alert('Database info logged to console (F12)');
+              } catch (error) {
+                console.error('Failed to get debug info:', error);
+              }
+            }}
+            className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-xs"
+          >
+            Debug Database
+          </button>
+        </div>
+
         {/* Source Selection */}
         <div className="mb-6">
           <h2 className="text-lg font-medium mb-3">Source</h2>
@@ -305,7 +366,7 @@ function Import() {
         )}
 
         {/* Candidates List */}
-        {!isScanning && candidates.length > 0 && (
+        {candidates.length > 0 && (
           <div>
             {/* Stats */}
             <div className="mb-4 flex items-center justify-between">
@@ -336,18 +397,21 @@ function Import() {
               {candidates.map(candidate => {
                 const isSelected = selection[candidate.file_path];
                 const isDuplicate = candidate.is_duplicate;
+                const isChecking = candidate.checking_duplicate;
 
                 return (
                   <div
                     key={candidate.file_path}
-                    className={`relative border-2 rounded overflow-hidden cursor-pointer transition-all ${
-                      isSelected
-                        ? 'border-blue-500'
+                    className={`relative border-2 rounded overflow-hidden transition-all ${
+                      isChecking
+                        ? 'border-gray-600 opacity-60 cursor-wait'
+                        : isSelected
+                        ? 'border-blue-500 cursor-pointer'
                         : isDuplicate
-                        ? 'border-yellow-600'
-                        : 'border-gray-700'
+                        ? 'border-gray-800 opacity-40 hover:opacity-100 cursor-pointer'
+                        : 'border-gray-700 cursor-pointer'
                     }`}
-                    onClick={() => toggleSelection(candidate.file_path)}
+                    onClick={() => !isChecking && toggleSelection(candidate.file_path)}
                   >
                     {/* Thumbnail */}
                     <div className="aspect-square bg-gray-800 flex items-center justify-center overflow-hidden">
@@ -375,18 +439,12 @@ function Import() {
                     <div className="absolute top-2 left-2">
                       <input
                         type="checkbox"
-                        checked={isSelected}
+                        checked={isSelected || false}
                         onChange={() => {}}
                         className="w-5 h-5"
+                        disabled={isChecking}
                       />
                     </div>
-
-                    {/* Duplicate Badge */}
-                    {isDuplicate && (
-                      <div className="absolute top-2 right-2 bg-yellow-600 text-white text-xs px-2 py-1 rounded">
-                        Duplicate
-                      </div>
-                    )}
                   </div>
                 );
               })}

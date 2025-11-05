@@ -108,6 +108,14 @@ function Settings() {
 
       setMediaFiles(sortedFiles);
 
+      // Save to database for persistence
+      try {
+        await invoke('save_media_files_to_db', { files: sortedFiles });
+        console.log('Saved media files to database');
+      } catch (error) {
+        console.error('Failed to save media files to database:', error);
+      }
+
       // Create optimization jobs
       const jobs: OptimizationJob[] = sortedFiles.map(file => ({
         id: file.fileHash,
@@ -359,12 +367,64 @@ function Settings() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm text-gray-200 font-mono truncate">{folder}</div>
                   </div>
-                  <button
-                    onClick={() => handleRemoveFolder(folder)}
-                    className="ml-4 text-red-400 hover:text-red-300 text-sm"
-                  >
-                    Remove
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          // First, rescan to register new files in database
+                          const count = await invoke<number>('rescan_library_folder', {
+                            folderPath: folder,
+                          });
+                          console.log(`Registered ${count} new files in database`);
+
+                          // Then, reload all media files to update UI
+                          if (config) {
+                            const allFiles: MediaFile[] = [];
+                            for (const f of config.library_folders) {
+                              try {
+                                const files = await invoke<MediaFile[]>('scan_folder', { path: f });
+                                allFiles.push(...files);
+                              } catch (error) {
+                                console.error(`Failed to scan folder ${f}:`, error);
+                              }
+                            }
+
+                            // Sort by date
+                            const sortedFiles = allFiles.sort((a, b) => {
+                              const dateA = new Date(a.takenAt || a.modifiedAt).getTime();
+                              const dateB = new Date(b.takenAt || b.modifiedAt).getTime();
+                              return dateB - dateA;
+                            });
+
+                            setMediaFiles(sortedFiles);
+                            console.log(`UI updated with ${sortedFiles.length} files`);
+
+                            // Save to database for persistence
+                            try {
+                              await invoke('save_media_files_to_db', { files: sortedFiles });
+                              console.log('Saved updated media files to database');
+                            } catch (error) {
+                              console.error('Failed to save to database:', error);
+                            }
+                          }
+
+                          alert(`Registered ${count} new files in database and updated gallery`);
+                        } catch (error) {
+                          console.error('Failed to rescan folder:', error);
+                          alert(`Failed to rescan: ${error}`);
+                        }
+                      }}
+                      className="ml-4 text-blue-400 hover:text-blue-300 text-sm"
+                    >
+                      Rescan
+                    </button>
+                    <button
+                      onClick={() => handleRemoveFolder(folder)}
+                      className="ml-2 text-red-400 hover:text-red-300 text-sm"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

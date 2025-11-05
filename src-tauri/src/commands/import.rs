@@ -4,7 +4,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 use chrono::{DateTime, Utc};
-use rayon::prelude::*;
+use tauri::{AppHandle, Emitter};
 
 use crate::models::is_media_file;
 use crate::utils::hash_file;
@@ -20,10 +20,15 @@ pub struct ImportCandidate {
     pub media_type: String,
     pub modified_at: String,
     pub thumbnail_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checking_duplicate: Option<bool>,
 }
 
 #[tauri::command]
-pub async fn scan_import_source(source_path: String) -> Result<Vec<ImportCandidate>, String> {
+pub async fn scan_import_source(
+    source_path: String,
+    app: AppHandle,
+) -> Result<(), String> {
     let source = PathBuf::from(&source_path);
     if !source.exists() || !source.is_dir() {
         return Err("Invalid source path".to_string());
@@ -31,30 +36,48 @@ pub async fn scan_import_source(source_path: String) -> Result<Vec<ImportCandida
 
     println!("Scanning import source: {}", source_path);
 
-    // Collect all media files from source
-    let entries: Vec<PathBuf> = WalkDir::new(&source)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter_map(|e| {
-            let path = e.path();
-            if is_media_file(path.to_str()?).is_some() {
-                Some(path.to_path_buf())
-            } else {
-                None
-            }
-        })
-        .collect();
+    // Spawn background task so we don't block the UI
+    tauri::async_runtime::spawn(async move {
+        // Collect all media files from source
+        let entries: Vec<PathBuf> = WalkDir::new(&source)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .filter_map(|e| {
+                let path = e.path();
+                if is_media_file(path.to_str()?).is_some() {
+                    Some(path.to_path_buf())
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-    println!("Found {} media files in source", entries.len());
+        println!("Found {} media files in source", entries.len());
 
-    // Process files in parallel using rayon
-    // Each thread gets its own database connection
-    let candidates: Vec<ImportCandidate> = entries
-        .into_par_iter()
-        .filter_map(|path| {
-            // Create database connection per thread
+        // Emit total count
+        let _ = app.emit("import-scan-total", entries.len());
+
+        // Process files in parallel: preview generation + duplicate check
+        use rayon::prelude::*;
+
+        let results: Vec<_> = entries.par_iter().filter_map(|path| {
+            // Create preview (with thumbnail)
+            let mut preview = match create_preview_candidate(path) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Failed to create preview for {}: {}", path.display(), e);
+                    return None;
+                }
+            };
+
+            preview.checking_duplicate = Some(true);
+
+            // Emit preview immediately
+            let _ = app.emit("import-scan-candidate", preview.clone());
+
+            // Check for duplicates
             let db = match Database::new() {
                 Ok(db) => db,
                 Err(e) => {
@@ -63,25 +86,31 @@ pub async fn scan_import_source(source_path: String) -> Result<Vec<ImportCandida
                 }
             };
 
-            match process_import_candidate(&path, &db) {
-                Ok(candidate) => Some(candidate),
-                Err(e) => {
-                    eprintln!("Failed to process {}: {}", path.display(), e);
-                    None
-                }
-            }
-        })
-        .collect();
+            let is_dup = check_duplicate(path, &preview, &db).unwrap_or(false);
+            preview.is_duplicate = is_dup;
+            preview.checking_duplicate = None;
 
-    println!("Processed {} candidates ({} duplicates)",
-        candidates.len(),
-        candidates.iter().filter(|c| c.is_duplicate).count()
-    );
+            // Emit updated candidate with duplicate status
+            let _ = app.emit("import-scan-candidate-update", preview.clone());
 
-    Ok(candidates)
+            Some((preview, is_dup))
+        }).collect();
+
+        let processed = results.len();
+        let duplicates = results.iter().filter(|(_, is_dup)| *is_dup).count();
+
+        println!("Processed {} candidates ({} duplicates)", processed, duplicates);
+
+        // Emit completion event
+        let _ = app.emit("import-scan-complete", ());
+    });
+
+    // Return immediately so UI doesn't block
+    Ok(())
 }
 
-fn process_import_candidate(path: &Path, db: &Database) -> Result<ImportCandidate> {
+// Create preview candidate with basic info and thumbnail (fast)
+fn create_preview_candidate(path: &Path) -> Result<ImportCandidate> {
     let file_name = path.file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
@@ -98,55 +127,31 @@ fn process_import_candidate(path: &Path, db: &Database) -> Result<ImportCandidat
         .format("%Y-%m-%d %H:%M:%S")
         .to_string();
 
-    // Calculate file hash
-    let file_hash = hash_file(path)?;
-
-    // Check if this hash already exists in database
-    let is_duplicate = db.check_file_exists(&file_hash)
-        .unwrap_or(false);
-
-    // Determine media type
     let media_type = is_media_file(path.to_str().unwrap_or(""))
         .map(|t| format!("{:?}", t).to_lowercase())
         .unwrap_or_else(|| "unknown".to_string());
 
-    // Generate thumbnail for preview (temporary, in system temp folder)
-    let thumbnail_path = if media_type == "image" {
-        generate_temp_thumbnail(path).ok()
-    } else {
-        None
-    };
+    // No thumbnail generation - use original file
+    let thumbnail_path = None;
 
     Ok(ImportCandidate {
         file_path: path.to_string_lossy().to_string(),
         file_name,
         file_size,
-        file_hash,
-        is_duplicate,
+        file_hash: String::new(), // Will be filled in check_duplicate
+        is_duplicate: false, // Will be checked later
         media_type,
         modified_at: modified_at_str,
         thumbnail_path,
+        checking_duplicate: None,
     })
 }
 
-fn generate_temp_thumbnail(source_path: &Path) -> Result<String> {
-    use image::imageops::FilterType;
-
-    // Open and resize image
-    let img = image::open(source_path)?;
-    let thumbnail = img.resize(400, 400, FilterType::Lanczos3);
-
-    // Save to temp directory
-    let temp_dir = std::env::temp_dir();
-    let file_name = source_path.file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("thumb");
-    let thumb_filename = format!("pengler_preview_{}.jpg", file_name);
-    let thumb_path = temp_dir.join(thumb_filename);
-
-    thumbnail.save(&thumb_path)?;
-
-    Ok(thumb_path.to_string_lossy().to_string())
+// Check for duplicates (slower - requires hashing)
+fn check_duplicate(path: &Path, _candidate: &ImportCandidate, db: &Database) -> Result<bool> {
+    let file_hash = hash_file(path)?;
+    let exists = db.check_file_exists(&file_hash)?;
+    Ok(exists)
 }
 
 #[tauri::command]
@@ -268,11 +273,9 @@ pub async fn import_files(
                         final_dest.to_str().unwrap_or(""),
                         &media_type,
                         file_size,
-                        file_size, // Same size since we're not creating thumbnails here
+                        file_size,
                     ) {
                         eprintln!("Failed to register file in database: {}", e);
-                    } else {
-                        println!("Registered in database: {}", file_hash);
                     }
                 }
 
@@ -287,6 +290,155 @@ pub async fn import_files(
     println!("Successfully imported {} files", imported_files.len());
 
     Ok(imported_files)
+}
+
+#[tauri::command]
+pub async fn rescan_library_folder(folder_path: String) -> Result<usize, String> {
+    println!("Rescanning library folder: {}", folder_path);
+
+    let folder = PathBuf::from(&folder_path);
+    if !folder.exists() || !folder.is_dir() {
+        return Err("Invalid folder path".to_string());
+    }
+
+    // Get database connection
+    let db = Database::new()
+        .map_err(|e| format!("Failed to open database: {}", e))?;
+
+    // Get or create library folder entry
+    let folder_hash = crate::db::generate_folder_hash(&folder_path);
+    let folder_id = db.add_library_folder(&folder_path, &folder_hash)
+        .map_err(|e| format!("Failed to register library folder: {}", e))?;
+
+    // Collect all media files from folder
+    let entries: Vec<PathBuf> = WalkDir::new(&folder)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| {
+            let path = e.path();
+            if is_media_file(path.to_str()?).is_some() {
+                Some(path.to_path_buf())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    println!("Found {} media files in library folder", entries.len());
+
+    // Get all files in database for this folder
+    let db_files = db.load_all_media_files()
+        .map_err(|e| format!("Failed to load database files: {}", e))?;
+
+    // Build set of existing file paths
+    let existing_paths: std::collections::HashSet<String> = entries
+        .iter()
+        .filter_map(|p| p.to_str().map(|s| s.to_lowercase()))
+        .collect();
+
+    // Delete files from database that no longer exist on disk
+    let mut deleted = 0;
+    for db_file in db_files {
+        let db_path_normalized = db_file.file_path.to_lowercase();
+        if db_path_normalized.starts_with(&folder_path.to_lowercase()) &&
+           !existing_paths.contains(&db_path_normalized) {
+            if let Err(e) = db.delete_media_file_by_path(&db_file.file_path) {
+                eprintln!("Failed to delete {} from database: {}", db_file.file_path, e);
+            } else {
+                println!("Deleted missing file from database: {}", db_file.file_path);
+                deleted += 1;
+            }
+        }
+    }
+
+    if deleted > 0 {
+        println!("Deleted {} missing files from database", deleted);
+    }
+
+    let mut registered = 0;
+
+    // Process each file
+    for path in entries {
+        // Calculate hash
+        let file_hash = match hash_file(&path) {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!("Failed to hash {}: {}", path.display(), e);
+                continue;
+            }
+        };
+
+        // Check if already registered
+        if db.check_file_exists(&file_hash).unwrap_or(false) {
+            continue; // Already in database
+        }
+
+        // Get file metadata
+        let metadata = match fs::metadata(&path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("Failed to get metadata for {}: {}", path.display(), e);
+                continue;
+            }
+        };
+
+        let file_size = metadata.len() as i64;
+
+        let media_type = is_media_file(path.to_str().unwrap_or(""))
+            .map(|t| format!("{:?}", t).to_lowercase())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        // Register in database
+        if let Err(e) = db.add_cache_entry(
+            folder_id,
+            path.to_str().unwrap_or(""),
+            &file_hash,
+            path.to_str().unwrap_or(""),
+            &media_type,
+            file_size,
+            file_size,
+        ) {
+            eprintln!("Failed to register {} in database: {}", path.display(), e);
+        } else {
+            println!("Registered: {} ({})", path.display(), file_hash);
+            registered += 1;
+        }
+    }
+
+    println!("Registered {} new files in database", registered);
+    Ok(registered)
+}
+
+#[tauri::command]
+pub async fn debug_database_entries() -> Result<String, String> {
+    let db = Database::new()
+        .map_err(|e| format!("Failed to open database: {}", e))?;
+
+    let total = db.get_total_entry_count()
+        .map_err(|e| format!("Failed to get count: {}", e))?;
+
+    let entries = db.get_all_cache_entries()
+        .map_err(|e| format!("Failed to get entries: {}", e))?;
+
+    let mut output = format!("Total entries in database: {}\n\n", total);
+    output.push_str("Recent entries (up to 100):\n");
+    output.push_str("-".repeat(80).as_str());
+    output.push_str("\n");
+
+    for (hash, path, media_type) in entries {
+        let exists = std::path::Path::new(&path).exists();
+        output.push_str(&format!(
+            "Hash: {}\nPath: {}\nType: {}\nExists: {}\n\n",
+            &hash[..16],  // Show first 16 chars of hash
+            path,
+            media_type,
+            exists
+        ));
+    }
+
+    Ok(output)
 }
 
 #[tauri::command]

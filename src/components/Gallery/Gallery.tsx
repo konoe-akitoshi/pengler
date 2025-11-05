@@ -229,6 +229,14 @@ function Gallery() {
         });
         setMediaFiles(updatedFiles);
 
+        // Save to database for persistence
+        try {
+          await invoke('save_media_files_to_db', { files: updatedFiles });
+          console.log('Saved updated files to database');
+        } catch (error) {
+          console.error('Failed to save to database:', error);
+        }
+
         // Find and optimize newly added files
         const existingPaths = new Set(mediaFiles.map(f => f.filePath));
         const newFiles = currentFiles.filter(f => !existingPaths.has(f.filePath));
@@ -274,10 +282,19 @@ function Gallery() {
     });
 
     // Listen for file-removed events
-    const unlistenRemoved = listen<string>('file-removed', (event) => {
+    const unlistenRemoved = listen<string>('file-removed', async (event) => {
       const filePath = event.payload;
       console.log('File removed:', filePath);
       pendingChanges.removed.add(filePath);
+
+      // Delete from database
+      try {
+        await invoke('delete_media_file_from_db', { filePath });
+        console.log('Deleted from database:', filePath);
+      } catch (error) {
+        console.error('Failed to delete from database:', error);
+      }
+
       scheduleProcessing();
     });
 

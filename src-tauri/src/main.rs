@@ -42,6 +42,12 @@ use commands::{
     scan_import_source,
     import_files,
     detect_removable_drives,
+    rescan_library_folder,
+    debug_database_entries,
+    save_media_files_to_db,
+    load_media_files_from_db,
+    delete_media_file_from_db,
+    get_media_files_count,
 };
 use commands::watcher_commands::WatcherState;
 use std::sync::Mutex;
@@ -103,6 +109,12 @@ fn main() {
             scan_import_source,
             import_files,
             detect_removable_drives,
+            rescan_library_folder,
+            debug_database_entries,
+            save_media_files_to_db,
+            load_media_files_from_db,
+            delete_media_file_from_db,
+            get_media_files_count,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

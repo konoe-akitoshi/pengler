@@ -7,6 +7,7 @@ pub mod task_commands;
 pub mod watcher_commands;
 pub mod file_count;
 pub mod import;
+pub mod media_db;
 
 pub use scanner::scan_folder;
 pub use thumbnail::{generate_thumbnail, get_cache_stats, clear_cache};
@@ -45,4 +46,12 @@ pub use import::{
     scan_import_source,
     import_files,
     detect_removable_drives,
+    rescan_library_folder,
+    debug_database_entries,
+};
+pub use media_db::{
+    save_media_files_to_db,
+    load_media_files_from_db,
+    delete_media_file_from_db,
+    get_media_files_count,
 };
